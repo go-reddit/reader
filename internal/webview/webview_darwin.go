@@ -39,6 +39,14 @@ var (
 	selCenter                     = objc.RegisterName("center")
 	selInitWithContentRect        = objc.RegisterName("initWithContentRect:styleMask:backing:defer:")
 	selInitWithFrameConfiguration = objc.RegisterName("initWithFrame:configuration:")
+	selSetAutoresizingMask        = objc.RegisterName("setAutoresizingMask:")
+)
+
+// NSViewAutoresizingMask bits: the web view grows in both dimensions with its
+// window so the wasm canvas (which fills the view) receives resize events.
+const (
+	viewWidthSizable  = 1 << 1
+	viewHeightSizable = 1 << 4
 )
 
 // NSWindowStyleMask bits.
@@ -148,6 +156,7 @@ func Run(cfg Config) error {
 
 	webview := objc.ID(objc.GetClass("WKWebView")).Send(selAlloc).
 		Send(selInitWithFrameConfiguration, rect, cfgObj)
+	webview.Send(selSetAutoresizingMask, uint(viewWidthSizable|viewHeightSizable))
 
 	nsurl := objc.ID(objc.GetClass("NSURL")).Send(selURLWithString, nsString(loadURL))
 	req := objc.ID(objc.GetClass("NSURLRequest")).Send(selRequestWithURL, nsurl)

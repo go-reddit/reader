@@ -40,18 +40,40 @@ func main() {
 	sr, sort := feedFromQuery()
 	scene.SetFeed(sr, sort)
 
-	canvas.Set("width", scene.W)
-	canvas.Set("height", scene.H)
 	ctx := canvas.Call("getContext", "2d")
-	imageData := ctx.Call("createImageData", scene.W, scene.H)
-	dst := imageData.Get("data")
-	buf := make([]byte, scene.W*scene.H*4)
+
+	// The canvas fills the window; the pixel buffer, ImageData and scene
+	// surface are all (re)sized to match. Drag the window edge and the feed
+	// re-lays-out at the new size instead of stretching.
+	var (
+		imageData js.Value
+		buf       []byte
+	)
+	resize := func() {
+		w := viewportSize(canvas, "clientWidth", 900)
+		h := viewportSize(canvas, "clientHeight", 660)
+		scene.Resize(w, h)
+		w, h = scene.W, scene.H // Resize clamps to a minimum
+		canvas.Set("width", w)
+		canvas.Set("height", h)
+		imageData = ctx.Call("createImageData", w, h)
+		buf = make([]byte, w*h*4)
+	}
 
 	render := func() {
 		scene.Draw(buf)
-		js.CopyBytesToJS(dst, buf)
+		js.CopyBytesToJS(imageData.Get("data"), buf)
 		ctx.Call("putImageData", imageData, 0, 0)
 	}
+
+	resize()
+
+	// Re-layout when the window (and thus the canvas) changes size.
+	js.Global().Call("addEventListener", "resize", js.FuncOf(func(_ js.Value, _ []js.Value) any {
+		resize()
+		render()
+		return nil
+	}))
 
 	// Click: map to a post and open it in a new tab.
 	canvas.Call("addEventListener", "click", js.FuncOf(func(_ js.Value, args []js.Value) any {
@@ -76,6 +98,16 @@ func main() {
 	render()
 	loadFeed(scene, sr, sort, render)
 	select {} // park so the callbacks stay live
+}
+
+// viewportSize reads the canvas element's current CSS pixel size (clientWidth
+// /clientHeight, which track the window because the canvas fills it), falling
+// back to def when the value is not yet available (0 before first layout).
+func viewportSize(canvas js.Value, prop string, def int) int {
+	if v := canvas.Get(prop).Int(); v > 0 {
+		return v
+	}
+	return def
 }
 
 // prefersDark reports the OS/browser colour-scheme preference.

@@ -65,6 +65,31 @@ func NewScene() *Scene {
 	}
 }
 
+// Minimum sensible surface, so a tiny window never produces a degenerate
+// (zero/negative) viewport.
+const (
+	MinW = 320
+	MinH = 240
+)
+
+// Resize sets the surface to w×h logical pixels (clamped to a minimum) and
+// re-clamps the scroll position so it stays valid for the new viewport. The
+// front-end calls this whenever the window/canvas changes size, then redraws;
+// the layout adapts (wider cards, more rows visible) rather than stretching.
+func (s *Scene) Resize(w, h int) {
+	if w < MinW {
+		w = MinW
+	}
+	if h < MinH {
+		h = MinH
+	}
+	s.W, s.H = w, h
+	s.layout()
+	if m := s.MaxScroll(); s.ScrollY > m {
+		s.ScrollY = m
+	}
+}
+
 // SetTheme swaps the palette (e.g. DefaultDark). A nil theme is ignored.
 func (s *Scene) SetTheme(t *toolkit.Theme) {
 	if t != nil {

@@ -73,6 +73,36 @@ func TestFeedLabel(t *testing.T) {
 	}
 }
 
+func TestResize(t *testing.T) {
+	s := NewScene()
+	s.SetPosts(samplePosts(40))
+	s.Scroll(1 << 20) // scroll to the bottom at the default size
+
+	// Grow: surface changes, scroll re-clamped to the (smaller) new max.
+	s.Resize(1400, 1000)
+	if s.W != 1400 || s.H != 1000 {
+		t.Fatalf("Resize(1400,1000) => %dx%d", s.W, s.H)
+	}
+	if s.ScrollY > s.MaxScroll() {
+		t.Errorf("scroll %d exceeds max %d after grow", s.ScrollY, s.MaxScroll())
+	}
+	// The wider surface makes cards wider: a post row still hit-tests.
+	if _, ok := s.HitTest(s.W/2, headerH+pad+rowH/2); !ok {
+		t.Error("post row should hit-test at the new width")
+	}
+	// Clamp to the minimum on a tiny window.
+	s.Resize(10, 10)
+	if s.W != MinW || s.H != MinH {
+		t.Errorf("tiny resize not clamped: %dx%d, want %dx%d", s.W, s.H, MinW, MinH)
+	}
+	// Draw at the clamped size must not panic and must produce output.
+	buf := make([]byte, s.W*s.H*4)
+	s.Draw(buf)
+	if allZero(buf) {
+		t.Error("Draw at min size produced empty buffer")
+	}
+}
+
 func TestScrollClamp(t *testing.T) {
 	s := NewScene()
 	s.SetPosts(samplePosts(40)) // tall content
