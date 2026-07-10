@@ -9,7 +9,7 @@ import (
 
 func TestDefault(t *testing.T) {
 	d := Default()
-	if len(d.Profiles) != 2 || d.Profiles[0].Name != "Pro" || d.Profiles[1].Name != "Perso" {
+	if len(d.Profiles) != 1 || d.Profiles[0].Name != "Home" {
 		t.Fatalf("default profiles = %+v", d.Profiles)
 	}
 	if d.Active != 0 || d.Sort != "hot" || d.Theme != ThemeSystem {
@@ -18,7 +18,7 @@ func TestDefault(t *testing.T) {
 }
 
 func TestActiveProfile(t *testing.T) {
-	s := Default()
+	s := Settings{Profiles: []Profile{{Name: "Pro"}, {Name: "Perso"}}}
 	if s.ActiveProfile().Name != "Pro" {
 		t.Error("active 0 should be Pro")
 	}
@@ -63,7 +63,7 @@ func TestLoadMissingReturnsDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(s.Profiles) != 2 {
+	if len(s.Profiles) != 1 {
 		t.Errorf("missing file should give defaults, got %+v", s)
 	}
 }
@@ -159,7 +159,7 @@ func TestStore(t *testing.T) {
 	st := NewStore(p)
 	// Missing file loads defaults.
 	got, err := st.Load()
-	if err != nil || len(got.Profiles) != 2 {
+	if err != nil || len(got.Profiles) != 1 {
 		t.Fatalf("store load default: %+v %v", got, err)
 	}
 	got.Sort = "top"

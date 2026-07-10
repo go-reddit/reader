@@ -28,6 +28,11 @@ func samplePosts(n int) []reddit.Post {
 
 func sizedScene(n int) *Scene {
 	s := NewScene()
+	// Two profiles so the profile-tab tests have something to click.
+	s.SetProfiles([]settings.Profile{
+		{Name: "Pro", Feeds: []string{"golang", "rust", "kubernetes"}},
+		{Name: "Perso", Feeds: []string{"", "gaming", "movies"}},
+	}, 0)
 	s.SetFeed("golang", "top")
 	s.SetPosts(samplePosts(n))
 	s.Resize(1000, 700)
@@ -39,7 +44,7 @@ func TestNewSceneDefaults(t *testing.T) {
 	if s.W != 900 || s.H != 660 || s.theme == nil || s.Sort != "hot" || s.Scale != 1 {
 		t.Fatalf("defaults: %+v", s)
 	}
-	if len(s.Profiles) != 2 || s.Profiles[0].Name != "Pro" || s.Active != 0 {
+	if len(s.Profiles) != 1 || s.Profiles[0].Name != "Home" || s.Active != 0 {
 		t.Errorf("profiles = %+v active=%d", s.Profiles, s.Active)
 	}
 }

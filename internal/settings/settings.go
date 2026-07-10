@@ -35,13 +35,13 @@ type Settings struct {
 	Theme    string    `json:"theme"`  // system|light|dark
 }
 
-// Default returns the seed settings: two example profiles separating
-// professional from personal subreddits.
+// Default returns the seed settings: a single starter profile. Users create
+// their own profiles (e.g. separating "Pro" and "Perso" subreddits) from the
+// in-app Settings panel — nothing here is meant to be authoritative.
 func Default() Settings {
 	return Settings{
 		Profiles: []Profile{
-			{Name: "Pro", Feeds: []string{"golang", "rust", "kubernetes", "programming", "devops"}},
-			{Name: "Perso", Feeds: []string{"", "gaming", "movies", "science", "worldnews"}},
+			{Name: "Home", Feeds: []string{"", "golang", "programming", "worldnews"}},
 		},
 		Active: 0,
 		Sort:   "hot",

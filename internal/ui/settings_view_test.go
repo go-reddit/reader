@@ -8,6 +8,10 @@ import (
 
 func settingsScene() *Scene {
 	s := NewScene()
+	s.SetProfiles([]settings.Profile{
+		{Name: "Pro", Feeds: []string{"golang", "rust"}},
+		{Name: "Perso", Feeds: []string{"", "gaming"}},
+	}, 0)
 	s.OpenSettings()
 	s.Resize(1200, 800)
 	return s
