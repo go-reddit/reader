@@ -404,3 +404,60 @@ func TestDrawLoggedInSidebar(t *testing.T) {
 	s.LoggedIn = true // exercises the "Log out" label branch
 	s.Draw(make([]byte, s.W*s.H*4))
 }
+
+func TestSearchField(t *testing.T) {
+	s := sizedScene(0)
+	s.SetPosts([]reddit.Post{
+		{ID: "a", Title: "Go wasm pipeline"},
+		{ID: "b", Title: "Rust borrow checker"},
+		{ID: "c", Title: "another wasm post"},
+	})
+
+	// Focus via a click on the search field.
+	hit := s.HitTest(s.searchR.X+5, s.searchR.Y+s.searchR.H/2)
+	if hit.Kind != HitSearch {
+		t.Fatalf("search hit = %+v", hit)
+	}
+	s.FocusSearch(true)
+	if !s.SearchFocused() {
+		t.Error("FocusSearch")
+	}
+
+	// Typing filters the feed by title (case-insensitive).
+	for _, r := range "WASM" {
+		s.TypeRune(r)
+	}
+	if s.Search() != "WASM" {
+		t.Errorf("search = %q", s.Search())
+	}
+	s.layout()
+	if len(s.rows) != 2 { // only the two "wasm" posts
+		t.Fatalf("filtered rows = %d, want 2", len(s.rows))
+	}
+	// Backspace edits the term.
+	s.Backspace()
+	if s.Search() != "WAS" {
+		t.Errorf("after backspace = %q", s.Search())
+	}
+	// SetSearch replaces + resets scroll.
+	s.ScrollY = 50
+	s.SetSearch("")
+	if s.Search() != "" || s.ScrollY != 0 {
+		t.Error("SetSearch reset")
+	}
+	s.layout()
+	if len(s.rows) != 3 {
+		t.Errorf("cleared filter rows = %d, want 3", len(s.rows))
+	}
+	s.FocusSearch(false)
+	if s.SearchFocused() {
+		t.Error("blur")
+	}
+}
+
+func TestDrawSearchFocused(t *testing.T) {
+	s := sizedScene(5)
+	s.FocusSearch(true)
+	s.SetSearch("go")
+	s.Draw(make([]byte, s.W*s.H*4)) // focused + text (caret) path
+}

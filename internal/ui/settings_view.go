@@ -46,22 +46,30 @@ func (s *Scene) SelectEdit(i int) {
 }
 
 // TypeRune appends a printable rune to whichever text field has focus (the
-// add-subreddit field in settings, or the focused login field).
+// topbar filter, the add-subreddit field in settings, or a login field).
 func (s *Scene) TypeRune(r rune) {
-	if s.Mode == ModeLogin {
+	switch {
+	case s.Mode == ModeLogin:
 		s.loginTypeRune(r)
-		return
+	case s.Mode == ModeFeed && s.searchFocused:
+		s.search += string(r)
+		s.ScrollY = 0
+	default:
+		s.input += string(r)
 	}
-	s.input += string(r)
 }
 
 // Backspace removes the last rune of the focused text field.
 func (s *Scene) Backspace() {
-	if s.Mode == ModeLogin {
+	switch {
+	case s.Mode == ModeLogin:
 		s.loginBackspace()
-		return
+	case s.Mode == ModeFeed && s.searchFocused:
+		s.search = trimLastRune(s.search)
+		s.ScrollY = 0
+	default:
+		s.input = trimLastRune(s.input)
 	}
-	s.input = trimLastRune(s.input)
 }
 
 func trimLastRune(str string) string {

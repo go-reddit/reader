@@ -194,6 +194,33 @@ func main() {
 			}
 			return nil
 		}
+		// Topbar filter field (feed view).
+		if scene.Mode == ui.ModeFeed && scene.SearchFocused() {
+			switch {
+			case key == "Enter":
+				ev.Call("preventDefault")
+				if q := scene.Search(); q != "" {
+					scene.SetSearch("")
+					scene.FocusSearch(false)
+					openFeed(q) // treat the term as a subreddit to open
+				}
+			case key == "Escape":
+				ev.Call("preventDefault")
+				scene.SetSearch("")
+				scene.FocusSearch(false)
+				render()
+			case key == "Backspace":
+				ev.Call("preventDefault")
+				scene.Backspace()
+				render()
+			case utf8.RuneCountInString(key) == 1:
+				ev.Call("preventDefault")
+				scene.TypeRune([]rune(key)[0])
+				render()
+			}
+			return nil
+		}
+
 		// Text entry for the in-canvas editors.
 		switch scene.Mode {
 		case ui.ModeSettings:
@@ -238,7 +265,16 @@ func main() {
 	// and topbar.
 	canvas.Call("addEventListener", "click", js.FuncOf(func(_ js.Value, args []js.Value) any {
 		x, y := eventXY(canvas, args)
-		switch hit := scene.HitTest(x, y); hit.Kind {
+		hit := scene.HitTest(x, y)
+		// Any click outside the filter field blurs it.
+		if scene.SearchFocused() && hit.Kind != ui.HitSearch {
+			scene.FocusSearch(false)
+			render()
+		}
+		switch hit.Kind {
+		case ui.HitSearch:
+			scene.FocusSearch(true)
+			render()
 		case ui.HitPost:
 			if hit.Post.FullPermalink() != "" {
 				js.Global().Call("open", hit.Post.FullPermalink(), "_blank")

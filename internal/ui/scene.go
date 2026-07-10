@@ -62,6 +62,9 @@ const (
 	// Sidebar account entry (feed view):
 	HitOpenLogin // open the login form
 	HitLogout    // forget stored credentials
+
+	// Topbar search field (feed view):
+	HitSearch // focus the filter/search input
 )
 
 // Hit is the result of [Scene.HitTest].
@@ -96,6 +99,11 @@ type Scene struct {
 	Status    string
 	ScrollY   int
 	Scale     float64 // display scale (zoom × devicePixelRatio); 0 => 1
+
+	// Topbar filter/search.
+	search        string
+	searchFocused bool
+	searchR       toolkit.Rect
 
 	// Preferences view.
 	Mode      Mode
@@ -204,6 +212,21 @@ func (s *Scene) SetPosts(posts []reddit.Post) {
 	s.ScrollY = 0
 }
 
+// FocusSearch sets/clears focus on the topbar filter field.
+func (s *Scene) FocusSearch(v bool) { s.searchFocused = v }
+
+// SearchFocused reports whether the topbar filter field has focus.
+func (s *Scene) SearchFocused() bool { return s.searchFocused }
+
+// Search returns the current filter term.
+func (s *Scene) Search() string { return s.search }
+
+// SetSearch replaces the filter term and resets scroll.
+func (s *Scene) SetSearch(q string) {
+	s.search = q
+	s.ScrollY = 0
+}
+
 // FeedName returns a human-readable label for the current feed.
 func (s *Scene) FeedName() string { return s.feedLabel() }
 
@@ -276,6 +299,17 @@ func (s *Scene) layout() {
 		x += w
 	}
 
+	// Topbar filter field, right-aligned in the blue bar.
+	fieldH := m.tab.height + m.rpx(8)
+	searchW := m.rpx(240)
+	if min := x + m.pad; m.pad*2+searchW > s.W-min { // don't overlap the tabs
+		searchW = s.W - min - m.pad
+	}
+	if searchW < m.rpx(80) {
+		searchW = m.rpx(80)
+	}
+	s.searchR = toolkit.Rect{X: s.W - m.pad - searchW, Y: (m.topbarH - fieldH) / 2, W: searchW, H: fieldH}
+
 	// Sidebar profile tabs (top row).
 	s.profTabs = s.profTabs[:0]
 	px := m.pad
@@ -300,10 +334,14 @@ func (s *Scene) layout() {
 	s.settingsR = toolkit.Rect{X: 0, Y: s.H - m.footerH - m.sideItemH, W: m.sidebarW, H: m.sideItemH}
 	s.accountR = toolkit.Rect{X: 0, Y: s.settingsR.Y - m.sideItemH, W: m.sidebarW, H: m.sideItemH}
 
-	// Feed rows.
+	// Feed rows (filtered by the topbar search term, by title).
 	s.rows = s.rows[:0]
 	y := m.pad
+	q := strings.ToLower(strings.TrimSpace(s.search))
 	for _, p := range s.Posts {
+		if q != "" && !strings.Contains(strings.ToLower(p.Title), q) {
+			continue
+		}
 		s.rows = append(s.rows, rowLayout{top: y, post: p})
 		y += m.rowH + m.rowGap
 	}
@@ -322,6 +360,9 @@ func (s *Scene) HitTest(x, y int) Hit {
 	m := s.m
 	switch {
 	case y < m.topbarH:
+		if s.searchR.Contains(x, y) {
+			return Hit{Kind: HitSearch}
+		}
 		for _, t := range s.tabs {
 			if t.rect.Contains(x, y) {
 				return Hit{Kind: HitSort, Sort: t.sort}
@@ -454,7 +495,24 @@ func (s *Scene) Draw(buf []byte) {
 		}
 		m.tab.draw(img, t.rect.X+m.tabPad, (m.topbarH-m.tab.height)/2, t.sort, col)
 	}
-	m.header.drawRight(img, s.W-m.pad, (m.topbarH-m.header.height)/2, s.feedLabel(), onAccent)
+
+	// Topbar filter field.
+	sr := s.searchR
+	p.FillRoundRect(painter.Rect{X: sr.X, Y: sr.Y, W: sr.W, H: sr.H}, m.rpx(6), th.Surface)
+	if s.searchFocused {
+		p.StrokeRoundRect(painter.Rect{X: sr.X, Y: sr.Y, W: sr.W, H: sr.H}, m.rpx(6), onAccent, 2)
+	}
+	stext, scol := s.search, th.OnSurface
+	if stext == "" {
+		stext, scol = "filter posts…", mute(th.OnSurface, th.Surface)
+	}
+	stx := sr.X + m.rpx(8)
+	sty := sr.Y + (sr.H-m.tab.height)/2
+	m.tab.draw(img, stx, sty, stext, scol)
+	if s.searchFocused && s.search != "" {
+		cx := stx + m.tab.width(s.search) + m.rpx(1)
+		p.FillRect(painter.Rect{X: cx, Y: sty, W: m.rpx(2), H: m.tab.height}, th.OnSurface)
+	}
 
 	// --- footer ---
 	fy := s.H - m.footerH
