@@ -22,10 +22,9 @@ type Config struct {
 	Height    float64
 	Handler   http.Handler
 	Scheme    string
-	MenuTitle    string
-	OnLogin      func()
-	OnLogout     func()
-	RedditEngine bool
+	MenuTitle string
+	OnLogin   func()
+	OnLogout  func()
 }
 
 // Run is unavailable off macOS and always returns [ErrUnsupported].
