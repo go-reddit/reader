@@ -1,0 +1,43 @@
+version: "3"
+
+env:
+  GOWORK: off
+  CGO_ENABLED: "0"
+
+tasks:
+  wasm:
+    desc: Build the WebAssembly front-end into the embed directory
+    cmds:
+      - bash scripts/build-wasm.sh
+
+  build:
+    desc: Build the native reader binary (rebuilds the wasm first)
+    deps: [wasm]
+    cmds:
+      - go build -trimpath -o dist/reader .
+
+  app:
+    desc: Assemble "Reddit Reader.app"
+    cmds:
+      - bash scripts/make-app.sh
+
+  test:
+    desc: Run all native tests (client, ui, server, webview helpers)
+    cmds:
+      - go test ./...
+
+  cover:
+    desc: Coverage report for the pure-Go packages
+    cmds:
+      - go test -coverprofile=cover.out ./internal/... .
+      - go tool cover -func=cover.out | tail -1
+
+  run:
+    desc: Run the app in demo mode (no Reddit credentials needed)
+    deps: [wasm]
+    cmds:
+      - go run . -demo
+
+  vet:
+    cmds:
+      - go vet ./...

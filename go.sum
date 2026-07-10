@@ -1,0 +1,8 @@
+github.com/ebitengine/purego v0.10.1 h1:dewVBCBT2GaMu1SrNTYxQhgQBethzfhiwvZiLGP/qyY=
+github.com/ebitengine/purego v0.10.1/go.mod h1:iIjxzd6CiRiOG0UyXP+V1+jWqUXVjPKLAI0mRfJZTmQ=
+github.com/go-reddit/reddit v0.1.0 h1:/b6+4BKEBSnSIVAuWEYaLU4d01tjfcsu+LQea3OFSw4=
+github.com/go-reddit/reddit v0.1.0/go.mod h1:/zGZliQ8lN+iGyVAiGzeGGkY+rQBZNlF4JwAnRaYEGI=
+github.com/go-widgets/painter v0.1.2 h1:KV3Yet2l4Yg2c5GHNYikimrUq00Bk0JK8eew7y/dkQQ=
+github.com/go-widgets/painter v0.1.2/go.mod h1:ccmlkH2UmcXQh6rt9Fu2eDt2RI0B5V0POaGmUKeW0EQ=
+github.com/go-widgets/toolkit v0.9.3 h1:trehdl0pPdEMajMhm86D7MAsJ/XfE6dloNTL6E/Qkh4=
+github.com/go-widgets/toolkit v0.9.3/go.mod h1:mP4rHHGZ1DaC2VBuEqzBGTg1sm00Xl/eNOU6cIwSa1o=

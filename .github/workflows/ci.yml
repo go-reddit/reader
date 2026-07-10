@@ -1,0 +1,60 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  CGO_ENABLED: "0"
+
+jobs:
+  # Full build + tests on macOS: this is the only platform with the native
+  # WKWebView bridge, so its runtime tests (real Objective-C runtime) run here.
+  macos:
+    name: macos (build + test)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - run: go version
+      - name: Build wasm front-end
+        run: bash scripts/build-wasm.sh
+      - run: go vet ./...
+      - run: go build ./...
+      - name: Assemble app bundle
+        run: bash scripts/make-app.sh
+      - name: Test (race)
+        run: go test -race ./...
+      - name: 100% coverage on the pure packages
+        shell: bash
+        run: |
+          go test -coverprofile=cover.out ./internal/ui/... ./internal/server/...
+          go tool cover -func=cover.out | tail -n 20
+          cov=$(go tool cover -func=cover.out | tail -1 | awk '{print $3}' | tr -d '%')
+          echo "coverage (ui+server): ${cov}%"
+          awk -v t="$cov" 'BEGIN { exit !(t+0 >= 100.0) }' || {
+            echo "::error::pure-package coverage ${cov}% < 100%"; exit 1; }
+
+  # Cross-platform sanity: the non-webview packages and the wasm target build
+  # off macOS too (webview falls back to its !darwin stub).
+  linux:
+    name: linux (build + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - name: Build wasm front-end
+        run: bash scripts/build-wasm.sh
+      - run: go build ./...
+      - run: go test ./internal/ui/... ./internal/server/... .
+      - name: Verify wasm compiles
+        run: GOOS=js GOARCH=wasm go build -o /dev/null ./cmd/front

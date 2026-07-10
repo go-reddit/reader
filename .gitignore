@@ -1,0 +1,5 @@
+/dist/
+/cover.out
+# The wasm bundle is a build artifact produced by scripts/build-wasm.sh.
+# index.html and wasm_exec.js are committed; reader.wasm is not.
+/internal/server/assets/reader.wasm
