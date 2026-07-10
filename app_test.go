@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"testing"
 )
 
@@ -70,7 +71,23 @@ func TestFirstNonEmpty(t *testing.T) {
 	}
 }
 
-func TestOpenBrowserBadCommandNonFatal(t *testing.T) {
-	// A bogus URL/command must not panic; the fallback print path runs.
-	openBrowser("http://127.0.0.1:0/")
+func TestOpenBrowser(t *testing.T) {
+	// Override the spawn seam so the test never actually opens a browser.
+	orig := startCommand
+	t.Cleanup(func() { startCommand = orig })
+
+	var gotName string
+	var gotArgs []string
+	startCommand = func(name string, args ...string) error {
+		gotName, gotArgs = name, args
+		return nil
+	}
+	openBrowser("http://127.0.0.1:9/")
+	if gotName == "" || len(gotArgs) == 0 || gotArgs[len(gotArgs)-1] != "http://127.0.0.1:9/" {
+		t.Errorf("openBrowser dispatched %q %v", gotName, gotArgs)
+	}
+
+	// Error branch: a failing spawn falls back to the print path, non-fatally.
+	startCommand = func(string, ...string) error { return errors.New("boom") }
+	openBrowser("http://127.0.0.1:9/")
 }

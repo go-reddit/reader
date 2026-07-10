@@ -89,6 +89,13 @@ func main() {
 	}
 }
 
+// startCommand launches a detached command. It is a package var so tests can
+// exercise openBrowser's logic WITHOUT actually spawning a browser (a test
+// that called the real thing would pop a window open on every `go test`).
+var startCommand = func(name string, args ...string) error {
+	return exec.Command(name, args...).Start()
+}
+
 // openBrowser opens url in the platform's default browser. Best-effort: a
 // failure is logged, not fatal (the URL is already printed).
 func openBrowser(url string) {
@@ -102,7 +109,7 @@ func openBrowser(url string) {
 	default:
 		cmd = "xdg-open"
 	}
-	if err := exec.Command(cmd, append(args, url)...).Start(); err != nil {
+	if err := startCommand(cmd, append(args, url)...); err != nil {
 		fmt.Printf("open %s in your browser\n", url)
 	}
 }
