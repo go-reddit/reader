@@ -74,6 +74,15 @@ READER_OAUTH_CLIENT_ID=…  READER_OAUTH_CLIENT_SECRET=…  ./dist/reader
 | | `READER_OAUTH_CLIENT_ID` / `_SECRET` | app-only OAuth |
 | | `READER_OAUTH_USERNAME` / `_PASSWORD` | script-grant OAuth |
 
+### Keyboard & window
+
+- **Drag the window edge** — the feed re-lays-out at the new size (cards
+  widen/narrow, titles reflow), it does not stretch.
+- **⌘ + / ⌘ -** — zoom the display in/out; **⌘ 0** resets. Zoom renders the
+  go-widgets UI at a smaller/larger logical resolution (bigger text and cards,
+  fewer at once), staying crisp rather than blurring.
+- **Scroll** — browse the feed; **click a post** — open it.
+
 ## Build layout
 
 - `internal/ui` — the go-widgets scene: layout, hit-testing, rendering. Pure,

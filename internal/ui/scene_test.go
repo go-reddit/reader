@@ -103,6 +103,54 @@ func TestResize(t *testing.T) {
 	}
 }
 
+func TestClampZoom(t *testing.T) {
+	if ClampZoom(0.1) != MinZoom {
+		t.Error("below min not clamped")
+	}
+	if ClampZoom(9) != MaxZoom {
+		t.Error("above max not clamped")
+	}
+	if ClampZoom(1.5) != 1.5 {
+		t.Error("in-range changed")
+	}
+}
+
+func TestStepZoom(t *testing.T) {
+	// In and out move by one step off the grid.
+	if got := StepZoom(1.0, +1); got < 1.09 || got > 1.11 {
+		t.Errorf("zoom in => %v, want ~1.1", got)
+	}
+	if got := StepZoom(1.0, -1); got < 0.89 || got > 0.91 {
+		t.Errorf("zoom out => %v, want ~0.9", got)
+	}
+	// dir 0 leaves the (grid-rounded) value unchanged.
+	if got := StepZoom(1.5, 0); got != 1.5 {
+		t.Errorf("no-op => %v, want 1.5", got)
+	}
+	// Clamped at the extremes.
+	if got := StepZoom(MaxZoom, +1); got != MaxZoom {
+		t.Errorf("zoom in at max => %v", got)
+	}
+	if got := StepZoom(MinZoom, -1); got != MinZoom {
+		t.Errorf("zoom out at min => %v", got)
+	}
+}
+
+func TestLogicalSize(t *testing.T) {
+	if got := LogicalSize(1000, 2.0); got != 500 {
+		t.Errorf("LogicalSize(1000,2) = %d, want 500", got)
+	}
+	if got := LogicalSize(900, 1.0); got != 900 {
+		t.Errorf("LogicalSize(900,1) = %d, want 900", got)
+	}
+	if got := LogicalSize(100, 0); got != 100 { // zoom 0 treated as 1
+		t.Errorf("LogicalSize(100,0) = %d, want 100", got)
+	}
+	if got := LogicalSize(0, 3.0); got != 1 { // never below 1
+		t.Errorf("LogicalSize(0,3) = %d, want 1", got)
+	}
+}
+
 func TestScrollClamp(t *testing.T) {
 	s := NewScene()
 	s.SetPosts(samplePosts(40)) // tall content

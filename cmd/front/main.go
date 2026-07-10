@@ -48,10 +48,16 @@ func main() {
 	var (
 		imageData js.Value
 		buf       []byte
+		zoom      = 1.0
 	)
+	// The logical surface is the canvas (window) size divided by the zoom
+	// factor, so a larger zoom renders a smaller buffer the canvas magnifies:
+	// bigger text and cards, fewer visible at once.
 	resize := func() {
-		w := viewportSize(canvas, "clientWidth", 900)
-		h := viewportSize(canvas, "clientHeight", 660)
+		cw := viewportSize(canvas, "clientWidth", 900)
+		ch := viewportSize(canvas, "clientHeight", 660)
+		w := ui.LogicalSize(cw, zoom)
+		h := ui.LogicalSize(ch, zoom)
 		scene.Resize(w, h)
 		w, h = scene.W, scene.H // Resize clamps to a minimum
 		canvas.Set("width", w)
@@ -72,6 +78,37 @@ func main() {
 	js.Global().Call("addEventListener", "resize", js.FuncOf(func(_ js.Value, _ []js.Value) any {
 		resize()
 		render()
+		return nil
+	}))
+
+	// Cmd +/- change the display zoom; Cmd 0 resets it. We intercept these so
+	// they scale the go-widgets UI rather than the WebView's own magnification.
+	setZoom := func(z float64) {
+		if z != zoom {
+			zoom = z
+			resize()
+			render()
+		}
+	}
+	js.Global().Call("addEventListener", "keydown", js.FuncOf(func(_ js.Value, args []js.Value) any {
+		if len(args) == 0 {
+			return nil
+		}
+		ev := args[0]
+		if !(ev.Get("metaKey").Bool() || ev.Get("ctrlKey").Bool()) {
+			return nil
+		}
+		switch ev.Get("key").String() {
+		case "+", "=": // Cmd+= is "zoom in" without Shift on US layouts
+			ev.Call("preventDefault")
+			setZoom(ui.StepZoom(zoom, +1))
+		case "-", "_":
+			ev.Call("preventDefault")
+			setZoom(ui.StepZoom(zoom, -1))
+		case "0":
+			ev.Call("preventDefault")
+			setZoom(1.0)
+		}
 		return nil
 	}))
 

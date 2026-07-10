@@ -72,6 +72,55 @@ const (
 	MinH = 240
 )
 
+// Display-zoom bounds and step. The front-end divides the canvas size by the
+// zoom factor to get the logical surface it renders into, so a larger zoom
+// yields a smaller logical buffer that the canvas magnifies — bigger text and
+// cards, fewer visible at once.
+const (
+	MinZoom  = 0.5
+	MaxZoom  = 3.0
+	ZoomStep = 0.1
+)
+
+// ClampZoom constrains z to [MinZoom, MaxZoom].
+func ClampZoom(z float64) float64 {
+	switch {
+	case z < MinZoom:
+		return MinZoom
+	case z > MaxZoom:
+		return MaxZoom
+	default:
+		return z
+	}
+}
+
+// StepZoom moves the zoom one step in the given direction (+1 in, -1 out, 0 no
+// change), rounded to the step grid and clamped. Any other dir is treated as 0.
+func StepZoom(z float64, dir int) float64 {
+	switch {
+	case dir > 0:
+		z += ZoomStep
+	case dir < 0:
+		z -= ZoomStep
+	}
+	// Round to the nearest ZoomStep so repeated presses stay on a clean grid.
+	z = float64(int(z/ZoomStep+0.5)) * ZoomStep
+	return ClampZoom(z)
+}
+
+// LogicalSize maps a canvas dimension in device/CSS pixels to the logical
+// surface dimension at the given zoom (canvasPx / zoom), never below 1.
+func LogicalSize(canvasPx int, zoom float64) int {
+	if zoom <= 0 {
+		zoom = 1
+	}
+	n := int(float64(canvasPx)/zoom + 0.5)
+	if n < 1 {
+		n = 1
+	}
+	return n
+}
+
 // Resize sets the surface to w×h logical pixels (clamped to a minimum) and
 // re-clamps the scroll position so it stays valid for the new viewport. The
 // front-end calls this whenever the window/canvas changes size, then redraws;
@@ -225,7 +274,7 @@ func (s *Scene) Draw(buf []byte) {
 		status = fmt.Sprintf("%d posts", len(s.Posts))
 	}
 	toolkit.DrawText(p, pad, fy+(footerH-toolkit.GlyphHeight)/2, status, th.OnSurface)
-	hint := "click a post to open · scroll to browse"
+	hint := "click to open · scroll · Cmd +/- zoom"
 	toolkit.DrawText(p, s.W-pad-toolkit.TextWidth(hint), fy+(footerH-toolkit.GlyphHeight)/2, hint, mute(th.OnSurface, th.SurfaceAlt))
 }
 
