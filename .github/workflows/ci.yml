@@ -26,7 +26,10 @@ jobs:
       - run: go version
       - name: Build wasm front-end
         run: bash scripts/build-wasm.sh
-      - run: go vet ./...
+      # -unsafeptr is disabled: reading Security.framework's kSec* data symbols
+      # (CFStringRef) via purego needs an unavoidable uintptr->Pointer deref the
+      # analyzer over-flags. All other unsafe uses go through unsafe.Add/Slice.
+      - run: go vet -unsafeptr=false ./...
       - run: go build ./...
       - name: Assemble app bundle
         run: bash scripts/make-app.sh
