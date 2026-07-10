@@ -33,7 +33,13 @@ tasks:
       - go tool cover -func=cover.out | tail -1
 
   run:
-    desc: Run the app in demo mode (no Reddit credentials needed)
+    desc: Run the app against real Reddit (front page; pass -sr to pick a subreddit)
+    deps: [wasm]
+    cmds:
+      - go run .
+
+  demo:
+    desc: Run offline with built-in per-subreddit sample feeds (no network/credentials)
     deps: [wasm]
     cmds:
       - go run . -demo

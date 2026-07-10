@@ -51,21 +51,29 @@ Three design choices worth calling out:
 ## Try it
 
 ```sh
-# No Reddit credentials needed — serves a built-in sample feed:
-task run          # == go run . -demo
+# Real Reddit (front page; clicking a sidebar feed loads that subreddit):
+task run                       # == go run .
+go run . -sr golang -sort top  # start on a specific feed
 
 # Build a double-clickable app bundle:
-task app          # produces dist/Reddit Reader.app
-open "dist/Reddit Reader.app" --args -demo
+task app                       # produces dist/Reddit Reader.app
+open "dist/Reddit Reader.app"
 ```
 
-Against real Reddit:
+**Reddit increasingly blocks anonymous `.json` access with a 403** (always from
+datacenter IPs, sometimes from residential). If you see the 403 message in the
+status bar, use OAuth — register an app at <https://www.reddit.com/prefs/apps>
+and export its credentials; the reader then authenticates and works everywhere:
 
 ```sh
-task build
-./dist/reader -sr golang -sort top
-# OAuth (recommended — anonymous .json is often blocked with a 403):
-READER_OAUTH_CLIENT_ID=…  READER_OAUTH_CLIENT_SECRET=…  ./dist/reader
+READER_OAUTH_CLIENT_ID=…  READER_OAUTH_CLIENT_SECRET=…  task run
+```
+
+Offline / no-credentials demo (built-in per-subreddit sample feeds — good for
+trying the UI and the sidebar switching without a network):
+
+```sh
+task demo                      # == go run . -demo
 ```
 
 ### Flags & environment

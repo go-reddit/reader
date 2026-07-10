@@ -230,7 +230,11 @@ func loadFeed(scene *ui.Scene, sr, sort string, render func()) {
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
-			scene.Status = "reddit error: HTTP " + strconv.Itoa(resp.StatusCode)
+			msg := "reddit error: HTTP " + strconv.Itoa(resp.StatusCode)
+			if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
+				msg += " — reddit blocked anonymous access; set READER_OAUTH_CLIENT_ID/SECRET (or try -demo)"
+			}
+			scene.Status = msg
 			render()
 			return
 		}

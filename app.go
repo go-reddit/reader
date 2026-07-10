@@ -25,11 +25,16 @@ type options struct {
 // optionsFromEnv seeds an options from environment variables. Flags in main
 // override these. OAuth credentials belong in the environment (never flags),
 // so they don't leak into the process table.
+// defaultUserAgent identifies the reader to Reddit. A descriptive, non-generic
+// User-Agent is the minimum Reddit asks of anonymous traffic; override it with
+// READER_USER_AGENT (Reddit's format: "<platform>:<app>:<version> (by /u/you)").
+const defaultUserAgent = "macos:go-reddit-reader:0.1 (+https://github.com/go-reddit/reader)"
+
 func optionsFromEnv(getenv func(string) string) options {
 	return options{
 		subreddit:   getenv("READER_SUBREDDIT"),
 		sort:        firstNonEmpty(getenv("READER_SORT"), "hot"),
-		userAgent:   getenv("READER_USER_AGENT"),
+		userAgent:   firstNonEmpty(getenv("READER_USER_AGENT"), defaultUserAgent),
 		oauthID:     getenv("READER_OAUTH_CLIENT_ID"),
 		oauthSecret: getenv("READER_OAUTH_CLIENT_SECRET"),
 		oauthUser:   getenv("READER_OAUTH_USERNAME"),
