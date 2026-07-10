@@ -376,3 +376,26 @@ func TestTextFaceHelpers(t *testing.T) {
 		t.Error("zero px face")
 	}
 }
+
+func TestHitTestAccount(t *testing.T) {
+	s := sizedScene(5)
+	// Logged out -> HitOpenLogin.
+	if h := s.HitTest(10, s.accountR.Y+s.accountR.H/2); h.Kind != HitOpenLogin {
+		t.Errorf("logged-out account => %+v", h)
+	}
+	// Logged in -> HitLogout.
+	s.LoggedIn = true
+	if h := s.HitTest(10, s.accountR.Y+s.accountR.H/2); h.Kind != HitLogout {
+		t.Errorf("logged-in account => %+v", h)
+	}
+	// Settings entry still resolves.
+	if h := s.HitTest(10, s.settingsR.Y+s.settingsR.H/2); h.Kind != HitSettings {
+		t.Errorf("settings => %+v", h)
+	}
+}
+
+func TestDrawLoggedInSidebar(t *testing.T) {
+	s := sizedScene(3)
+	s.LoggedIn = true // exercises the "Log out" label branch
+	s.Draw(make([]byte, s.W*s.H*4))
+}

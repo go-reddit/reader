@@ -16,12 +16,15 @@ var ErrUnsupported = errors.New("webview: native window is only available on mac
 // Config controls the hosted window. Fields mirror the darwin build so callers
 // compile unchanged across platforms; Handler/Scheme are ignored here.
 type Config struct {
-	Title   string
-	URL     string
-	Width   float64
-	Height  float64
-	Handler http.Handler
-	Scheme  string
+	Title     string
+	URL       string
+	Width     float64
+	Height    float64
+	Handler   http.Handler
+	Scheme    string
+	MenuTitle string
+	OnLogin   func()
+	OnLogout  func()
 }
 
 // Run is unavailable off macOS and always returns [ErrUnsupported].

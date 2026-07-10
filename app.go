@@ -59,6 +59,17 @@ func (o options) newClient() *reddit.Client {
 	return reddit.NewClient(opts...)
 }
 
+// oauthClientFor builds an OAuth-authenticated Reddit client from stored
+// credentials, preserving the configured User-Agent. Used to swap the server's
+// client after a successful Touch-ID login.
+func (o options) oauthClientFor(clientID, clientSecret string) *reddit.Client {
+	opts := []reddit.Option{reddit.WithOAuth(clientID, clientSecret)}
+	if o.userAgent != "" {
+		opts = append(opts, reddit.WithUserAgent(o.userAgent))
+	}
+	return reddit.NewClient(opts...)
+}
+
 // feedURL builds the page URL the webview loads, carrying the initial feed
 // selection as query parameters the wasm reads on boot.
 func feedURL(base string, o options) string {

@@ -117,6 +117,45 @@ func main() {
 		return ""
 	}
 
+	// submitLogin POSTs the typed credentials; the host prompts Touch ID and
+	// stores them, then the client is reconfigured to OAuth and the feed
+	// reloads. On failure the error shows under the form.
+	submitLogin := func() {
+		id, sec := scene.LoginCredentials()
+		b, _ := json.Marshal(map[string]string{"client_id": id, "client_secret": sec})
+		scene.SetLoginError("Authenticating with Touch ID…")
+		render()
+		go func() {
+			resp, err := http.Post("/api/login", "application/json", bytes.NewReader(b))
+			if err != nil {
+				scene.SetLoginError("network error: " + err.Error())
+				render()
+				return
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				scene.SetLoginError("login failed (HTTP " + strconv.Itoa(resp.StatusCode) + ") — check credentials / Touch ID")
+				render()
+				return
+			}
+			scene.LoggedIn = true
+			scene.Mode = ui.ModeFeed
+			render()
+			openFeed(firstFeed())
+		}()
+	}
+
+	doLogout := func() {
+		go func() {
+			if resp, err := http.Post("/api/logout", "application/json", nil); err == nil {
+				resp.Body.Close()
+			}
+			scene.LoggedIn = false
+			render()
+			openFeed(firstFeed())
+		}()
+	}
+
 	resize()
 
 	// Re-layout when the window (and thus the canvas) changes size.
@@ -155,13 +194,32 @@ func main() {
 			}
 			return nil
 		}
-		// In the settings editor, route text into the add-subreddit field.
-		if scene.Mode == ui.ModeSettings {
+		// Text entry for the in-canvas editors.
+		switch scene.Mode {
+		case ui.ModeSettings:
 			switch {
 			case key == "Enter":
 				ev.Call("preventDefault")
 				scene.AddInputFeed()
 				persist()
+				render()
+			case key == "Backspace":
+				ev.Call("preventDefault")
+				scene.Backspace()
+				render()
+			case utf8.RuneCountInString(key) == 1:
+				ev.Call("preventDefault")
+				scene.TypeRune([]rune(key)[0])
+				render()
+			}
+		case ui.ModeLogin:
+			switch {
+			case key == "Enter":
+				ev.Call("preventDefault")
+				submitLogin()
+			case key == "Tab":
+				ev.Call("preventDefault")
+				scene.NextLoginField()
 				render()
 			case key == "Backspace":
 				ev.Call("preventDefault")
@@ -233,6 +291,21 @@ func main() {
 			scene.DeleteProfile(hit.Profile)
 			persist()
 			render()
+
+		// --- account / login ---
+		case ui.HitOpenLogin:
+			scene.OpenLogin()
+			render()
+		case ui.HitLogout:
+			doLogout()
+		case ui.HitLoginField:
+			scene.FocusLoginField(hit.Profile)
+			render()
+		case ui.HitLoginSubmit:
+			submitLogin()
+		case ui.HitLoginCancel:
+			scene.Mode = ui.ModeFeed
+			render()
 		}
 		return nil
 	}))
@@ -265,6 +338,15 @@ func main() {
 		}
 		if querySort != "" { // URL overrides the stored sort
 			scene.Sort = querySort
+		}
+		// Reflect the current auth state in the sidebar.
+		if resp, err := http.Get("/api/login/status"); err == nil {
+			var st struct {
+				LoggedIn bool `json:"logged_in"`
+			}
+			json.NewDecoder(resp.Body).Decode(&st)
+			resp.Body.Close()
+			scene.LoggedIn = st.LoggedIn
 		}
 		applyTheme()
 		openFeed(firstFeed())

@@ -15,8 +15,10 @@ import (
 	"io/fs"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
+	"github.com/go-reddit/reader/internal/auth"
 	"github.com/go-reddit/reader/internal/settings"
 	"github.com/go-reddit/reddit"
 )
@@ -36,11 +38,23 @@ type SettingsStore interface {
 	Save(settings.Settings) error
 }
 
+// LoginService is the subset of auth.Service the HTTP layer drives. A nil
+// service disables the login endpoints.
+type LoginService interface {
+	Available() bool
+	LoggedIn() bool
+	Login(auth.Credentials) error
+	Unlock() error
+	Logout() error
+}
+
 // Server wires the Reddit client to an http.Handler.
 type Server struct {
-	client   Fetcher
+	mu       sync.RWMutex
+	client   Fetcher // swappable at runtime (anonymous -> OAuth after login)
 	assets   fs.FS
 	settings SettingsStore
+	login    LoginService
 	mux      *http.ServeMux
 }
 
@@ -52,13 +66,33 @@ func New(client Fetcher, assets fs.FS) *Server {
 	s.mux.HandleFunc("/api/feed", s.handleFeed)
 	s.mux.HandleFunc("/api/comments", s.handleComments)
 	s.mux.HandleFunc("/api/settings", s.handleSettings)
+	s.mux.HandleFunc("/api/login", s.handleLogin)
+	s.mux.HandleFunc("/api/login/status", s.handleLoginStatus)
+	s.mux.HandleFunc("/api/login/unlock", s.handleUnlock)
+	s.mux.HandleFunc("/api/logout", s.handleLogout)
 	s.mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	return s
 }
 
-// SetSettings attaches a settings store, enabling the /api/settings and
-// /settings endpoints.
+// SetSettings attaches a settings store, enabling the /api/settings endpoint.
 func (s *Server) SetSettings(store SettingsStore) { s.settings = store }
+
+// SetLogin attaches a login service, enabling the /api/login endpoints.
+func (s *Server) SetLogin(l LoginService) { s.login = l }
+
+// SetFetcher swaps the Reddit client at runtime (e.g. anonymous -> OAuth after
+// a successful login). Safe for concurrent use.
+func (s *Server) SetFetcher(f Fetcher) {
+	s.mu.Lock()
+	s.client = f
+	s.mu.Unlock()
+}
+
+func (s *Server) getClient() Fetcher {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.client
+}
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.ServeHTTP(w, r) }
 
@@ -89,10 +123,11 @@ func (s *Server) handleFeed(w http.ResponseWriter, r *http.Request) {
 		page *reddit.Page
 		err  error
 	)
+	client := s.getClient()
 	if sr := q.Get("sr"); sr != "" {
-		page, err = s.client.Subreddit(ctx, sr, sort, opts)
+		page, err = client.Subreddit(ctx, sr, sort, opts)
 	} else {
-		page, err = s.client.Frontpage(ctx, sort, opts)
+		page, err = client.Frontpage(ctx, sort, opts)
 	}
 	if err != nil {
 		writeError(w, err)
@@ -112,12 +147,81 @@ func (s *Server) handleComments(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
 	defer cancel()
 
-	res, err := s.client.Comments(ctx, q.Get("sr"), id, parseListingOptions(r))
+	res, err := s.getClient().Comments(ctx, q.Get("sr"), id, parseListingOptions(r))
 	if err != nil {
 		writeError(w, err)
 		return
 	}
 	writeJSON(w, res)
+}
+
+// loginStatus is the JSON shape of /api/login/status.
+type loginStatus struct {
+	Available bool `json:"available"`
+	LoggedIn  bool `json:"logged_in"`
+}
+
+func (s *Server) status() loginStatus {
+	if s.login == nil {
+		return loginStatus{}
+	}
+	return loginStatus{Available: s.login.Available(), LoggedIn: s.login.LoggedIn()}
+}
+
+// handleLoginStatus reports whether login is available and active.
+func (s *Server) handleLoginStatus(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, s.status())
+}
+
+// handleLogin accepts POSTed OAuth app credentials, runs the Touch-ID-gated
+// vault save (via the service), and applies them. POST /api/login/unlock (no
+// body) instead loads already-stored credentials behind Touch ID.
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if s.login == nil {
+		http.Error(w, `{"error":"login unavailable"}`, http.StatusNotImplemented)
+		return
+	}
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var c auth.Credentials
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&c); err != nil {
+		http.Error(w, `{"error":"invalid credentials json"}`, http.StatusBadRequest)
+		return
+	}
+	if err := s.login.Login(c); err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, s.status())
+}
+
+// handleUnlock loads already-stored credentials behind Touch ID.
+func (s *Server) handleUnlock(w http.ResponseWriter, r *http.Request) {
+	if s.login == nil {
+		http.Error(w, `{"error":"login unavailable"}`, http.StatusNotImplemented)
+		return
+	}
+	if err := s.login.Unlock(); err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, s.status())
+}
+
+// handleLogout forgets the stored credentials.
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if s.login == nil {
+		http.Error(w, `{"error":"login unavailable"}`, http.StatusNotImplemented)
+		return
+	}
+	if err := s.login.Logout(); err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, s.status())
 }
 
 // handleSettings serves GET (current settings) and PUT (replace settings) at

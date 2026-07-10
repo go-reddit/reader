@@ -10,6 +10,7 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/go-reddit/reader/internal/auth"
 	"github.com/go-reddit/reader/internal/settings"
 	"github.com/go-reddit/reddit"
 )
@@ -271,6 +272,169 @@ func TestCommentsUpstreamError(t *testing.T) {
 	srv.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/comments?id=abc", nil))
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", rr.Code)
+	}
+}
+
+// fakeLogin is an in-memory LoginService.
+type fakeLogin struct {
+	avail     bool
+	loggedIn  bool
+	loginErr  error
+	unlockErr error
+	logoutErr error
+	gotCreds  auth.Credentials
+}
+
+func (f *fakeLogin) Available() bool { return f.avail }
+func (f *fakeLogin) LoggedIn() bool  { return f.loggedIn }
+func (f *fakeLogin) Login(c auth.Credentials) error {
+	f.gotCreds = c
+	if f.loginErr != nil {
+		return f.loginErr
+	}
+	f.loggedIn = true
+	return nil
+}
+func (f *fakeLogin) Unlock() error {
+	if f.unlockErr != nil {
+		return f.unlockErr
+	}
+	f.loggedIn = true
+	return nil
+}
+func (f *fakeLogin) Logout() error {
+	f.loggedIn = false
+	return f.logoutErr
+}
+
+func TestLoginStatus(t *testing.T) {
+	srv := New(&stubFetcher{}, testAssets())
+	// No service: available=false, logged_in=false.
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/login/status", nil))
+	var st struct {
+		Available bool `json:"available"`
+		LoggedIn  bool `json:"logged_in"`
+	}
+	json.Unmarshal(rr.Body.Bytes(), &st)
+	if st.Available || st.LoggedIn {
+		t.Errorf("no-service status = %+v", st)
+	}
+	srv.SetLogin(&fakeLogin{avail: true, loggedIn: true})
+	rr = httptest.NewRecorder()
+	srv.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/login/status", nil))
+	json.Unmarshal(rr.Body.Bytes(), &st)
+	if !st.Available || !st.LoggedIn {
+		t.Errorf("service status = %+v", st)
+	}
+}
+
+func TestLoginSuccessSwapsFetcher(t *testing.T) {
+	fl := &fakeLogin{avail: true}
+	srv := New(&stubFetcher{}, testAssets())
+	srv.SetLogin(fl)
+	rr := httptest.NewRecorder()
+	body := `{"client_id":"id","client_secret":"sec"}`
+	srv.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/login", strings.NewReader(body)))
+	if rr.Code != 200 {
+		t.Fatalf("status = %d", rr.Code)
+	}
+	if fl.gotCreds.ClientID != "id" || !fl.loggedIn {
+		t.Errorf("login not applied: %+v", fl)
+	}
+}
+
+func TestLoginUnavailable(t *testing.T) {
+	srv := New(&stubFetcher{}, testAssets())
+	for _, path := range []string{"/api/login", "/api/logout"} {
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, path, strings.NewReader("{}")))
+		if rr.Code != http.StatusNotImplemented {
+			t.Errorf("%s => %d, want 501", path, rr.Code)
+		}
+	}
+	// unlock with no service.
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/login/unlock", nil))
+	if rr.Code != http.StatusNotImplemented {
+		t.Errorf("unlock no-service => %d", rr.Code)
+	}
+}
+
+func TestLoginMethodAndBody(t *testing.T) {
+	srv := New(&stubFetcher{}, testAssets())
+	srv.SetLogin(&fakeLogin{avail: true})
+	// GET not allowed.
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/login", nil))
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("GET login => %d", rr.Code)
+	}
+	// Bad JSON.
+	rr = httptest.NewRecorder()
+	srv.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/login", strings.NewReader("{bad")))
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("bad json => %d", rr.Code)
+	}
+}
+
+func TestLoginError(t *testing.T) {
+	srv := New(&stubFetcher{}, testAssets())
+	srv.SetLogin(&fakeLogin{avail: true, loginErr: errors.New("touch id cancelled")})
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/login", strings.NewReader(`{"client_id":"a","client_secret":"b"}`)))
+	if rr.Code != http.StatusBadGateway {
+		t.Errorf("login error => %d", rr.Code)
+	}
+}
+
+func TestUnlockAndLogout(t *testing.T) {
+	fl := &fakeLogin{avail: true}
+	srv := New(&stubFetcher{}, testAssets())
+	srv.SetLogin(fl)
+	// Unlock success.
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/login/unlock", nil))
+	if rr.Code != 200 || !fl.loggedIn {
+		t.Errorf("unlock => %d loggedIn=%v", rr.Code, fl.loggedIn)
+	}
+	// Logout success.
+	rr = httptest.NewRecorder()
+	srv.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/logout", nil))
+	if rr.Code != 200 || fl.loggedIn {
+		t.Errorf("logout => %d loggedIn=%v", rr.Code, fl.loggedIn)
+	}
+	// Unlock error.
+	fl2 := &fakeLogin{avail: true, unlockErr: errors.New("no creds")}
+	srv2 := New(&stubFetcher{}, testAssets())
+	srv2.SetLogin(fl2)
+	rr = httptest.NewRecorder()
+	srv2.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/login/unlock", nil))
+	if rr.Code != http.StatusBadGateway {
+		t.Errorf("unlock error => %d", rr.Code)
+	}
+	// Logout error.
+	fl3 := &fakeLogin{avail: true, logoutErr: errors.New("keychain")}
+	srv3 := New(&stubFetcher{}, testAssets())
+	srv3.SetLogin(fl3)
+	rr = httptest.NewRecorder()
+	srv3.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/logout", nil))
+	if rr.Code != http.StatusBadGateway {
+		t.Errorf("logout error => %d", rr.Code)
+	}
+}
+
+func TestSetFetcherSwaps(t *testing.T) {
+	first := &stubFetcher{page: &reddit.Page{After: "first"}}
+	second := &stubFetcher{page: &reddit.Page{After: "second"}}
+	srv := New(first, testAssets())
+	srv.SetFetcher(second)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/feed?sr=golang", nil))
+	var page reddit.Page
+	json.Unmarshal(rr.Body.Bytes(), &page)
+	if page.After != "second" {
+		t.Errorf("SetFetcher not applied: After=%q", page.After)
 	}
 }
 

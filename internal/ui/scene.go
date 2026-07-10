@@ -53,6 +53,15 @@ const (
 	HitNewProfile
 	HitDeleteProfile // Profile = index
 	HitCloseSettings
+
+	// Login-view actions (Mode == ModeLogin):
+	HitLoginField  // Profile = 0 (client id) or 1 (client secret)
+	HitLoginSubmit // submit the credentials (Touch ID)
+	HitLoginCancel
+
+	// Sidebar account entry (feed view):
+	HitOpenLogin // open the login form
+	HitLogout    // forget stored credentials
 )
 
 // Hit is the result of [Scene.HitTest].
@@ -71,6 +80,7 @@ type Mode int
 const (
 	ModeFeed     Mode = iota // the topbar + sidebar + feed
 	ModeSettings             // the in-canvas preferences editor
+	ModeLogin                // the in-canvas Reddit login form
 )
 
 // Scene is the mutable reader state.
@@ -92,17 +102,28 @@ type Scene struct {
 	ThemeName string // "system"|"light"|"dark" (persisted)
 	selEdit   int    // profile being edited in the settings view
 	input     string // the "add subreddit" text buffer
+	LoggedIn  bool   // reflects the auth state (drives the sidebar label)
+
+	// Login view.
+	loginID     string
+	loginSecret string
+	loginFocus  int // 0 = client id, 1 = client secret
+	loginErr    string
 
 	m         metrics
 	tabs      []tabHit
 	profTabs  []profTabHit
 	side      []sideHit
 	settingsR toolkit.Rect
+	accountR  toolkit.Rect
 	rows      []rowLayout
 	contentH  int
 
-	sButtons []sButton   // clickable regions in the settings view
+	sButtons []sButton // clickable regions in the settings/login views
 	sInputR  toolkit.Rect
+
+	loginIDR     toolkit.Rect
+	loginSecretR toolkit.Rect
 }
 
 type rowLayout struct {
@@ -275,8 +296,9 @@ func (s *Scene) layout() {
 		sy += m.sideItemH
 	}
 
-	// Settings entry pinned to the bottom of the sidebar.
+	// Settings + account entries pinned to the bottom of the sidebar.
 	s.settingsR = toolkit.Rect{X: 0, Y: s.H - m.footerH - m.sideItemH, W: m.sidebarW, H: m.sideItemH}
+	s.accountR = toolkit.Rect{X: 0, Y: s.settingsR.Y - m.sideItemH, W: m.sidebarW, H: m.sideItemH}
 
 	// Feed rows.
 	s.rows = s.rows[:0]
@@ -290,8 +312,11 @@ func (s *Scene) layout() {
 
 // HitTest maps a click to an action.
 func (s *Scene) HitTest(x, y int) Hit {
-	if s.Mode == ModeSettings {
+	switch s.Mode {
+	case ModeSettings:
 		return s.hitSettings(x, y)
+	case ModeLogin:
+		return s.hitLogin(x, y)
 	}
 	s.layout()
 	m := s.m
@@ -314,6 +339,12 @@ func (s *Scene) HitTest(x, y int) Hit {
 		if s.settingsR.Contains(x, y) {
 			return Hit{Kind: HitSettings}
 		}
+		if s.accountR.Contains(x, y) {
+			if s.LoggedIn {
+				return Hit{Kind: HitLogout}
+			}
+			return Hit{Kind: HitOpenLogin}
+		}
 		for _, it := range s.side {
 			if it.rect.Contains(x, y) {
 				return Hit{Kind: HitFeed, Feed: it.feed}
@@ -333,8 +364,12 @@ func (s *Scene) HitTest(x, y int) Hit {
 
 // Draw paints the whole scene into buf (s.W*s.H*4 RGBA bytes).
 func (s *Scene) Draw(buf []byte) {
-	if s.Mode == ModeSettings {
+	switch s.Mode {
+	case ModeSettings:
 		s.drawSettings(buf)
+		return
+	case ModeLogin:
+		s.drawLogin(buf)
 		return
 	}
 	s.layout()
@@ -397,8 +432,13 @@ func (s *Scene) Draw(buf []byte) {
 		m.side.draw(img, m.pad, it.rect.Y+(m.sideItemH-m.side.height)/2, label, col)
 	}
 
-	// Settings entry (pinned bottom) + sidebar border.
-	p.FillRect(painter.Rect{X: 0, Y: s.settingsR.Y - 1, W: m.sidebarW, H: 1}, th.Border)
+	// Account + Settings entries (pinned bottom) + sidebar border.
+	account := "Log in"
+	if s.LoggedIn {
+		account = "Log out"
+	}
+	p.FillRect(painter.Rect{X: 0, Y: s.accountR.Y - 1, W: m.sidebarW, H: 1}, th.Border)
+	m.side.draw(img, m.pad, s.accountR.Y+(m.sideItemH-m.side.height)/2, account, muteS)
 	m.side.draw(img, m.pad, s.settingsR.Y+(m.sideItemH-m.side.height)/2, "Settings", muteS)
 	p.FillRect(painter.Rect{X: m.sidebarW - 1, Y: m.topbarH, W: 1, H: s.H - m.topbarH - m.footerH}, th.Border)
 

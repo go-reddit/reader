@@ -45,15 +45,31 @@ func (s *Scene) SelectEdit(i int) {
 	}
 }
 
-// TypeRune appends a printable rune to the add-subreddit field.
-func (s *Scene) TypeRune(r rune) { s.input += string(r) }
-
-// Backspace removes the last rune of the add-subreddit field.
-func (s *Scene) Backspace() {
-	rs := []rune(s.input)
-	if len(rs) > 0 {
-		s.input = string(rs[:len(rs)-1])
+// TypeRune appends a printable rune to whichever text field has focus (the
+// add-subreddit field in settings, or the focused login field).
+func (s *Scene) TypeRune(r rune) {
+	if s.Mode == ModeLogin {
+		s.loginTypeRune(r)
+		return
 	}
+	s.input += string(r)
+}
+
+// Backspace removes the last rune of the focused text field.
+func (s *Scene) Backspace() {
+	if s.Mode == ModeLogin {
+		s.loginBackspace()
+		return
+	}
+	s.input = trimLastRune(s.input)
+}
+
+func trimLastRune(str string) string {
+	rs := []rune(str)
+	if len(rs) == 0 {
+		return str
+	}
+	return string(rs[:len(rs)-1])
 }
 
 // Input returns the current add-subreddit text (for the front-end display).

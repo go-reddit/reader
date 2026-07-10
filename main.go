@@ -18,6 +18,7 @@ import (
 	"os/exec"
 	"runtime"
 
+	"github.com/go-reddit/reader/internal/auth"
 	"github.com/go-reddit/reader/internal/server"
 	"github.com/go-reddit/reader/internal/settings"
 	"github.com/go-reddit/reader/internal/webview"
@@ -48,17 +49,27 @@ func main() {
 		log.Printf("reader: settings disabled: %v", err)
 	}
 
+	// Touch-ID-gated OAuth login: on success the server's client is swapped
+	// for an authenticated one.
+	authSvc := auth.NewService(auth.NewVault(), func(c auth.Credentials) {
+		srv.SetFetcher(opts.oauthClientFor(c.ClientID, c.ClientSecret))
+	})
+	srv.SetLogin(authSvc)
+
 	// Default macOS transport: serve everything in-process over a private URL
 	// scheme (no socket at all). -http, -serve-only, -no-window and browser
 	// fallback all need a real loopback address, so they take the TCP path.
 	if !useHTTP && !serveOnly && !opts.noWindow {
 		cfg := webview.Config{
-			Title:   "Reddit — go-widgets",
-			URL:     feedURL("", opts), // path-only under the scheme origin
-			Width:   900,
-			Height:  660,
-			Handler: srv,
-			Scheme:  "reader",
+			Title:     "Reddit — go-widgets",
+			URL:       feedURL("", opts), // path-only under the scheme origin
+			Width:     900,
+			Height:    660,
+			Handler:   srv,
+			Scheme:    "reader",
+			MenuTitle: "R", // menu-bar (tray) status item
+			OnLogin:   func() { _ = authSvc.Unlock() },
+			OnLogout:  func() { _ = authSvc.Logout() },
 		}
 		if err := webview.Run(cfg); err == nil {
 			return

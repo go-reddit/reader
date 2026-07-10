@@ -83,6 +83,14 @@ type Config struct {
 	Height  float64
 	Handler http.Handler // in-process request handler (socketless transport)
 	Scheme  string       // custom scheme when Handler != nil (default "reader")
+
+	// Menu-bar (NSStatusItem). When MenuTitle is non-empty a status-bar item
+	// is installed with Open / Log in / Log out / Quit entries. OnLogin and
+	// OnLogout are invoked (on the main thread) for the respective items; the
+	// web view is reloaded afterwards so the UI reflects the new state.
+	MenuTitle string
+	OnLogin   func()
+	OnLogout  func()
 }
 
 // frameworksLoaded ensures the AppKit/WebKit classes are registered exactly
@@ -166,6 +174,10 @@ func Run(cfg Config) error {
 	win.Send(selSetTitle, nsString(cfg.Title))
 	win.Send(selCenter)
 	win.Send(selMakeKeyAndOrderFront, objc.ID(0))
+
+	if cfg.MenuTitle != "" {
+		installMenuBar(app, win, webview, cfg)
+	}
 
 	app.Send(selActivateIgnoringOtherApps, true)
 	app.Send(selRun) // blocks until the app quits

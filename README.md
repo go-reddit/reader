@@ -73,13 +73,20 @@ open "dist/Reddit Reader.app"
 ```
 
 **Reddit increasingly blocks anonymous `.json` access with a 403** (always from
-datacenter IPs, sometimes from residential). If you see the 403 message in the
-status bar, use OAuth — register an app at <https://www.reddit.com/prefs/apps>
-and export its credentials; the reader then authenticates and works everywhere:
+datacenter IPs, sometimes from residential). Log in with OAuth — either via the
+environment:
 
 ```sh
 READER_OAUTH_CLIENT_ID=…  READER_OAUTH_CLIENT_SECRET=…  task run
 ```
+
+…or, better, through the **in-app login guarded by Touch ID**: click *Log in*
+in the sidebar (or the menu-bar item), paste your Reddit app's client id +
+secret (from <https://www.reddit.com/prefs/apps>), and approve with Touch ID.
+The credentials are stored in the macOS **Keychain**; on later launches the
+menu-bar *Log in with Touch ID* unlocks them biometrically. The login form and
+sidebar entry are drawn with go-widgets like the rest of the UI — no separate
+window. A **menu-bar (tray) item** (`R`) offers Open / Log in / Log out / Quit.
 
 Offline / no-credentials demo (built-in per-subreddit sample feeds — good for
 trying the UI and the sidebar switching without a network):
