@@ -91,6 +91,10 @@ type Config struct {
 	MenuTitle string
 	OnLogin   func()
 	OnLogout  func()
+
+	// RedditEngine installs a hidden reddit.com web view that fetches listings
+	// same-origin (a real browser, so no anti-bot 403). Use RedditFetch.
+	RedditEngine bool
 }
 
 // frameworksLoaded ensures the AppKit/WebKit classes are registered exactly
@@ -177,6 +181,12 @@ func Run(cfg Config) error {
 
 	if cfg.MenuTitle != "" {
 		installMenuBar(app, win, webview, cfg)
+	}
+	if cfg.RedditEngine {
+		if err := installRedditEngine(); err != nil {
+			// Non-fatal: the app still runs (demo / no live data).
+			fmt.Printf("reader: reddit engine unavailable: %v\n", err)
+		}
 	}
 
 	app.Send(selActivateIgnoringOtherApps, true)

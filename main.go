@@ -61,16 +61,22 @@ func main() {
 	// scheme (no socket at all). -http, -serve-only, -no-window and browser
 	// fallback all need a real loopback address, so they take the TCP path.
 	if !useHTTP && !serveOnly && !opts.noWindow {
+		// Live Reddit is fetched through a hidden reddit.com web view (a real
+		// browser, so no anti-bot 403). Demo mode keeps its built-in feed.
+		if !demo {
+			srv.SetFetcher(webFetcher{})
+		}
 		cfg := webview.Config{
-			Title:     "Reddit — go-widgets",
-			URL:       feedURL("", opts), // path-only under the scheme origin
-			Width:     900,
-			Height:    660,
-			Handler:   srv,
-			Scheme:    "reader",
-			MenuTitle: "R", // menu-bar (tray) status item
-			OnLogin:   func() { _ = authSvc.Unlock() },
-			OnLogout:  func() { _ = authSvc.Logout() },
+			Title:        "Reddit — go-widgets",
+			URL:          feedURL("", opts), // path-only under the scheme origin
+			Width:        900,
+			Height:       660,
+			Handler:      srv,
+			Scheme:       "reader",
+			MenuTitle:    "R", // menu-bar (tray) status item
+			OnLogin:      func() { _ = authSvc.Unlock() },
+			OnLogout:     func() { _ = authSvc.Logout() },
+			RedditEngine: !demo,
 		}
 		if err := webview.Run(cfg); err == nil {
 			return

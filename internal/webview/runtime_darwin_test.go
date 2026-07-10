@@ -300,3 +300,30 @@ func TestServeSchemeRequestBadMethod(t *testing.T) {
 		t.Errorf("bad method => %d", code)
 	}
 }
+
+func TestJSStringEscape(t *testing.T) {
+	if jsString("a'b") != `'a\'b'` {
+		t.Errorf("quote escape: %q", jsString("a'b"))
+	}
+	if jsString(`a\b`) != `'a\\b'` {
+		t.Errorf("backslash escape: %q", jsString(`a\b`))
+	}
+}
+
+func TestFetchJSShape(t *testing.T) {
+	js := fetchJS("r7", "/r/golang/hot.json?limit=5")
+	for _, want := range []string{"'r7'", "/r/golang/hot.json?limit=5", "messageHandlers.reddit.postMessage", "kind==='t3'"} {
+		if !contains2(js, want) {
+			t.Errorf("fetchJS missing %q", want)
+		}
+	}
+}
+
+func contains2(s, sub string) bool {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}
