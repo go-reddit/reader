@@ -19,6 +19,7 @@ import (
 	"runtime"
 
 	"github.com/go-reddit/reader/internal/server"
+	"github.com/go-reddit/reader/internal/settings"
 	"github.com/go-reddit/reader/internal/webview"
 )
 
@@ -41,6 +42,11 @@ func main() {
 		fetcher = demoFetcher{}
 	}
 	srv := server.New(fetcher, server.Assets)
+	if path, err := settings.DefaultPath(); err == nil {
+		srv.SetSettings(settings.NewStore(path))
+	} else {
+		log.Printf("reader: settings disabled: %v", err)
+	}
 
 	// Default macOS transport: serve everything in-process over a private URL
 	// scheme (no socket at all). -http, -serve-only, -no-window and browser

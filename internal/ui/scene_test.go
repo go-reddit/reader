@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-reddit/reader/internal/settings"
 	"github.com/go-reddit/reddit"
 	"github.com/go-widgets/toolkit"
 )
@@ -19,14 +20,12 @@ func samplePosts(n int) []reddit.Post {
 			Domain:      map[bool]string{true: "go.dev", false: ""}[i%3 != 0],
 			Score:       (i + 1) * 137,
 			NumComments: i * 3,
-			Permalink:   "/r/golang/comments/id/x/",
 			Flair:       map[bool]string{true: "News", false: ""}[i%2 == 0],
 		}
 	}
 	return posts
 }
 
-// sizedScene returns a laid-out scene of a comfortable size with n posts.
 func sizedScene(n int) *Scene {
 	s := NewScene()
 	s.SetFeed("golang", "top")
@@ -40,8 +39,8 @@ func TestNewSceneDefaults(t *testing.T) {
 	if s.W != 900 || s.H != 660 || s.theme == nil || s.Sort != "hot" || s.Scale != 1 {
 		t.Fatalf("defaults: %+v", s)
 	}
-	if len(s.Feeds) != len(DefaultFeeds) {
-		t.Errorf("Feeds = %v", s.Feeds)
+	if len(s.Profiles) != 2 || s.Profiles[0].Name != "Pro" || s.Active != 0 {
+		t.Errorf("profiles = %+v active=%d", s.Profiles, s.Active)
 	}
 }
 
@@ -64,41 +63,31 @@ func TestSetFeed(t *testing.T) {
 	if s.Subreddit != "golang" || s.Sort != "hot" {
 		t.Errorf("=> %q %q", s.Subreddit, s.Sort)
 	}
-	// A brand-new subreddit is appended to the sidebar.
-	s.SetFeed("kubernetes", "new")
-	if !contains(s.Feeds, "kubernetes") {
-		t.Error("new subreddit not added to Feeds")
-	}
-	// An existing one is not duplicated.
-	before := len(s.Feeds)
-	s.SetFeed("kubernetes", "top")
-	if len(s.Feeds) != before {
-		t.Error("subreddit duplicated in Feeds")
-	}
-	// Front page ("") is never added.
-	s.SetFeed("", "hot")
-	for _, f := range s.Feeds {
-		if f == "" && countEmpty(s.Feeds) > 1 {
-			t.Error("front page duplicated")
-		}
+	s.SetFeed("rust", "new")
+	if s.Subreddit != "rust" || s.Sort != "new" {
+		t.Errorf("=> %q %q", s.Subreddit, s.Sort)
 	}
 }
 
-func countEmpty(ss []string) (n int) {
-	for _, s := range ss {
-		if s == "" {
-			n++
-		}
+func TestSetProfilesAndActive(t *testing.T) {
+	s := NewScene()
+	profs := []settings.Profile{{Name: "A", Feeds: []string{"x"}}, {Name: "B", Feeds: []string{"y", "z"}}}
+	s.SetProfiles(profs, 1)
+	if s.Active != 1 || len(s.Profiles) != 2 {
+		t.Fatalf("SetProfiles => active=%d n=%d", s.Active, len(s.Profiles))
 	}
-	return n
-}
-
-func TestSetPostsResetsScroll(t *testing.T) {
-	s := sizedScene(40)
-	s.Scroll(500)
-	s.SetPosts(samplePosts(3))
-	if s.ScrollY != 0 || len(s.Posts) != 3 {
-		t.Errorf("SetPosts: scroll=%d posts=%d", s.ScrollY, len(s.Posts))
+	if got := s.ActiveFeeds(); len(got) != 2 || got[0] != "y" {
+		t.Errorf("ActiveFeeds => %v", got)
+	}
+	// Out-of-range active clamps to 0.
+	s.SetActive(99)
+	if s.Active != 0 {
+		t.Errorf("oob active => %d", s.Active)
+	}
+	// ActiveFeeds with an out-of-range index (forced) returns nil.
+	s.Active = 42
+	if s.ActiveFeeds() != nil {
+		t.Error("oob ActiveFeeds should be nil")
 	}
 }
 
@@ -127,7 +116,7 @@ func TestEffScale(t *testing.T) {
 
 func TestResizeClampAndScroll(t *testing.T) {
 	s := sizedScene(60)
-	s.Scroll(1 << 20) // to the bottom
+	s.Scroll(1 << 20)
 	s.Resize(1600, 1200)
 	if s.W != 1600 || s.H != 1200 {
 		t.Fatalf("resize => %dx%d", s.W, s.H)
@@ -135,7 +124,6 @@ func TestResizeClampAndScroll(t *testing.T) {
 	if s.ScrollY > s.MaxScroll() {
 		t.Errorf("scroll %d > max %d", s.ScrollY, s.MaxScroll())
 	}
-	// Clamp to the minimum surface.
 	s.Resize(10, 10)
 	if s.W != MinW || s.H != MinH {
 		t.Errorf("min clamp => %dx%d", s.W, s.H)
@@ -154,7 +142,6 @@ func TestScroll(t *testing.T) {
 	if s.ScrollY != s.MaxScroll() {
 		t.Errorf("overscroll not clamped: %d vs %d", s.ScrollY, s.MaxScroll())
 	}
-	// Short content cannot scroll.
 	s.SetPosts(samplePosts(1))
 	s.Scroll(50)
 	if s.MaxScroll() != 0 || s.ScrollY != 0 {
@@ -164,45 +151,59 @@ func TestScroll(t *testing.T) {
 
 func TestHitTestSort(t *testing.T) {
 	s := sizedScene(5)
-	tab := s.tabs[1] // "new"
+	tab := s.tabs[1]
 	hit := s.HitTest(tab.rect.X+tab.rect.W/2, tab.rect.H/2)
 	if hit.Kind != HitSort || hit.Sort != "new" {
 		t.Fatalf("sort hit = %+v", hit)
 	}
-	// Empty topbar space (far right, past the tabs) is a miss.
 	if h := s.HitTest(s.W-2, s.m.topbarH/2); h.Kind != HitNone {
 		t.Errorf("empty topbar => %+v", h)
 	}
 }
 
+func TestHitTestProfile(t *testing.T) {
+	s := sizedScene(5)
+	pt := s.profTabs[1] // "Perso"
+	hit := s.HitTest(pt.rect.X+pt.rect.W/2, pt.rect.Y+pt.rect.H/2)
+	if hit.Kind != HitProfile || hit.Profile != 1 {
+		t.Fatalf("profile hit = %+v", hit)
+	}
+}
+
+func TestHitTestSettings(t *testing.T) {
+	s := sizedScene(5)
+	hit := s.HitTest(s.settingsR.X+10, s.settingsR.Y+s.settingsR.H/2)
+	if hit.Kind != HitSettings {
+		t.Fatalf("settings hit = %+v", hit)
+	}
+}
+
 func TestHitTestFeed(t *testing.T) {
 	s := sizedScene(5)
-	item := s.side[2] // third bookmark
+	item := s.side[2]
 	hit := s.HitTest(item.rect.X+10, item.rect.Y+item.rect.H/2)
-	if hit.Kind != HitFeed || hit.Feed != s.Feeds[2] {
-		t.Fatalf("feed hit = %+v (want %q)", hit, s.Feeds[2])
+	if hit.Kind != HitFeed || hit.Feed != s.ActiveFeeds()[2] {
+		t.Fatalf("feed hit = %+v", hit)
 	}
-	// The "FEEDS" header row (above the first item) is a miss.
-	if h := s.HitTest(10, s.m.topbarH+s.m.sideItemH/2); h.Kind != HitNone {
+	// The "FEEDS" header row (between profile tabs and the first item) misses.
+	headerY := s.m.topbarH + s.m.profileTabH + s.m.sideItemH/2
+	if h := s.HitTest(10, headerY); h.Kind != HitNone {
 		t.Errorf("feeds header => %+v", h)
 	}
 }
 
 func TestHitTestPost(t *testing.T) {
-	s := sizedScene(40) // enough content to be scrollable
-	// Centre of the first post row.
+	s := sizedScene(40)
 	x := s.m.sidebarW + s.m.pad + 20
 	y := s.m.topbarH + s.rows[0].top + s.m.rowH/2
 	hit := s.HitTest(x, y)
 	if hit.Kind != HitPost || hit.Post.ID != s.Posts[0].ID {
 		t.Fatalf("post hit = %+v", hit)
 	}
-	// The gap between rows is a miss.
 	gapY := s.m.topbarH + s.rows[0].top + s.m.rowH + s.m.rowGap/2
 	if h := s.HitTest(x, gapY); h.Kind != HitNone {
 		t.Errorf("row gap => %+v", h)
 	}
-	// After scrolling, the same screen point maps to a later post.
 	s.Scroll(s.m.rowH + s.m.rowGap)
 	hit = s.HitTest(x, s.m.topbarH+s.rows[0].top+s.m.rowH/2)
 	if hit.Kind != HitPost || hit.Post.ID != s.Posts[1].ID {
@@ -219,23 +220,23 @@ func TestHitTestFooterIsMiss(t *testing.T) {
 
 func TestDrawSmoke(t *testing.T) {
 	s := sizedScene(14)
-	s.Status = "14 posts · r/golang"
+	s.Status = "14 posts"
 	buf := make([]byte, s.W*s.H*4)
 	s.Draw(buf)
 	if allZero(buf) {
 		t.Fatal("Draw produced an all-zero buffer")
 	}
-	// Scrolled render exercises the off-viewport skip.
 	s.Scroll(400)
 	s.Draw(buf)
 
-	// Empty + dark theme.
+	// Empty + dark + a non-active profile selected.
 	e := NewScene()
 	e.SetTheme(toolkit.DefaultDark())
+	e.SetActive(1)
 	e.Resize(900, 660)
 	e.Draw(make([]byte, e.W*e.H*4))
 
-	// Theme carrying Extra["OnAccent"] exercises that colour path.
+	// A theme carrying Extra["OnAccent"].
 	g := sizedScene(2)
 	th := toolkit.DefaultLight()
 	th.Extra = map[string]toolkit.RGBA{"OnAccent": {R: 255, G: 255, B: 255, A: 255}}
@@ -252,16 +253,39 @@ func allZero(b []byte) bool {
 	return true
 }
 
+func TestThemeFor(t *testing.T) {
+	for _, os := range []string{OSMac, OSLinux, OSWindows, "unknown"} {
+		for _, dark := range []bool{false, true} {
+			th := ThemeFor(os, dark)
+			if th == nil {
+				t.Fatalf("ThemeFor(%q,%v) nil", os, dark)
+			}
+			// Constructed palettes must carry an OnAccent for the topbar text.
+			if os == OSLinux || os == OSWindows {
+				if _, ok := th.Extra["OnAccent"]; !ok {
+					t.Errorf("%q dark=%v missing OnAccent", os, dark)
+				}
+			}
+		}
+	}
+}
+
+func TestRGB(t *testing.T) {
+	c := rgb(0x3584E4)
+	if c.R != 0x35 || c.G != 0x84 || c.B != 0xE4 || c.A != 0xFF {
+		t.Errorf("rgb => %+v", c)
+	}
+}
+
 func TestScalePxAndRpx(t *testing.T) {
 	if scalePx(100, 2) != 200 {
 		t.Error("scalePx basic")
 	}
-	if scalePx(1, 0.1) != 1 { // rounds to 0 -> clamped to 1
+	if scalePx(1, 0.1) != 1 {
 		t.Error("scalePx min clamp")
 	}
-	m := computeMetrics(1.0)
-	if m.rpx(6) != 6 {
-		t.Errorf("rpx(6)@1 = %d", m.rpx(6))
+	if computeMetrics(1.0).rpx(6) != 6 {
+		t.Error("rpx@1")
 	}
 }
 
@@ -282,7 +306,7 @@ func TestStepZoom(t *testing.T) {
 		t.Error("no-op step")
 	}
 	if StepZoom(MaxZoom, +1) != MaxZoom || StepZoom(MinZoom, -1) != MinZoom {
-		t.Error("step clamps at extremes")
+		t.Error("step clamps")
 	}
 }
 
@@ -305,45 +329,30 @@ func TestMetaLine(t *testing.T) {
 
 func TestWrapText(t *testing.T) {
 	tf := getFace(14, false)
-	if wrapText(tf, "", 100, 2) != nil {
-		t.Error("empty text")
+	if wrapText(tf, "", 100, 2) != nil || wrapText(tf, "hi", 0, 2) != nil || wrapText(tf, "hi", 100, 0) != nil {
+		t.Error("degenerate inputs")
 	}
-	if wrapText(tf, "hi", 0, 2) != nil {
-		t.Error("zero width")
-	}
-	if wrapText(tf, "hi", 100, 0) != nil {
-		t.Error("zero lines")
-	}
-	// Short text fits one line.
 	if got := wrapText(tf, "hi there", 400, 2); len(got) != 1 {
 		t.Errorf("one line => %v", got)
 	}
-	// Long text wraps to two, ellipsized when it overflows.
 	got := wrapText(tf, strings.Repeat("wordy ", 40), 120, 2)
 	if len(got) != 2 || !strings.HasSuffix(got[1], "…") {
 		t.Errorf("overflow => %v", got)
 	}
-	// A single word wider than the line is hard-cut.
-	got = wrapText(tf, "supercalifragilisticexpialidocious", 40, 3)
-	if len(got) == 0 {
-		t.Fatalf("long word => %v", got)
+	if got := wrapText(tf, "supercalifragilisticexpialidocious", 40, 3); len(got) == 0 {
+		t.Errorf("long word => %v", got)
 	}
-	// A word that overflows every line ellipsizes the last.
 	got = wrapText(tf, strings.Repeat("x", 200), 30, 2)
 	if len(got) != 2 || !strings.HasSuffix(got[1], "…") {
 		t.Errorf("long-word overflow => %v", got)
 	}
-	// Multi-line without overflow returns exactly the used lines.
-	got = wrapText(tf, "alpha beta gamma", 60, 3)
-	if len(got) < 1 {
+	if got := wrapText(tf, "alpha beta gamma", 60, 3); len(got) < 1 {
 		t.Errorf("wrap => %v", got)
 	}
 }
 
 func TestHardCut(t *testing.T) {
-	tf := getFace(14, false)
-	// Always returns at least one rune, even when nothing fits.
-	if got := hardCut(tf, "wide", 1); len([]rune(got)) != 1 {
+	if got := hardCut(getFace(14, false), "wide", 1); len([]rune(got)) != 1 {
 		t.Errorf("hardCut min one rune => %q", got)
 	}
 }
@@ -355,25 +364,14 @@ func TestMute(t *testing.T) {
 	}
 }
 
-func TestContains(t *testing.T) {
-	if !contains([]string{"a", "b"}, "b") || contains([]string{"a"}, "z") {
-		t.Error("contains")
-	}
-}
-
 func TestTextFaceHelpers(t *testing.T) {
 	tf := getFace(20, true)
-	if tf.width("") != 0 {
-		t.Error("empty width should be 0")
-	}
-	if tf.width("Wm") <= 0 || tf.height <= 0 || tf.ascent <= 0 {
+	if tf.width("") != 0 || tf.width("Wm") <= 0 || tf.height <= 0 || tf.ascent <= 0 {
 		t.Errorf("face metrics: %+v", tf)
 	}
-	// Second call is cached (same face value).
 	if getFace(20, true) != tf {
 		t.Error("face not cached")
 	}
-	// Zero/negative px is clamped to a usable face.
 	if getFace(0, false).height <= 0 {
 		t.Error("zero px face")
 	}

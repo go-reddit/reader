@@ -35,7 +35,7 @@ jobs:
       - name: 100% coverage on the pure packages
         shell: bash
         run: |
-          go test -coverprofile=cover.out ./internal/ui/... ./internal/server/...
+          go test -coverprofile=cover.out ./internal/ui/... ./internal/server/... ./internal/settings/...
           go tool cover -func=cover.out | tail -n 20
           cov=$(go tool cover -func=cover.out | tail -1 | awk '{print $3}' | tr -d '%')
           echo "coverage (ui+server): ${cov}%"
@@ -55,6 +55,6 @@ jobs:
       - name: Build wasm front-end
         run: bash scripts/build-wasm.sh
       - run: go build ./...
-      - run: go test ./internal/ui/... ./internal/server/... .
+      - run: go test ./internal/ui/... ./internal/server/... ./internal/settings/... .
       - name: Verify wasm compiles
         run: GOOS=js GOARCH=wasm go build -o /dev/null ./cmd/front

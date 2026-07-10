@@ -14,15 +14,18 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"syscall/js"
+	"unicode/utf8"
 
-	"github.com/go-reddit/reddit"
-	"github.com/go-widgets/toolkit"
+	"github.com/go-reddit/reader/internal/settings"
 	"github.com/go-reddit/reader/internal/ui"
+	"github.com/go-reddit/reddit"
 )
 
 func main() {
@@ -34,11 +37,13 @@ func main() {
 	}
 
 	scene := ui.NewScene()
-	if prefersDark() {
-		scene.SetTheme(toolkit.DefaultDark())
+	osName := detectOS()
+	querySR, querySort := feedFromQuery()
+	if querySort != "" {
+		scene.Sort = querySort
 	}
-	sr, sort := feedFromQuery()
-	scene.SetFeed(sr, sort)
+	applyTheme := func() { scene.SetTheme(ui.ResolveTheme(scene.ThemeName, osName, prefersDark())) }
+	applyTheme()
 
 	ctx := canvas.Call("getContext", "2d")
 
@@ -75,6 +80,43 @@ func main() {
 		ctx.Call("putImageData", imageData, 0, 0)
 	}
 
+	// persist writes the current profiles/sort/theme back to the host.
+	persist := func() {
+		b, err := json.Marshal(scene.Settings())
+		if err != nil {
+			return
+		}
+		go func() {
+			req, err := http.NewRequest(http.MethodPut, "/api/settings", bytes.NewReader(b))
+			if err != nil {
+				return
+			}
+			req.Header.Set("Content-Type", "application/json")
+			if resp, err := http.DefaultClient.Do(req); err == nil {
+				resp.Body.Close()
+			}
+		}()
+	}
+
+	// openFeed selects a subreddit + reloads its posts.
+	openFeed := func(sr string) {
+		scene.SetFeed(sr, scene.Sort)
+		render()
+		loadFeed(scene, scene.Subreddit, scene.Sort, render)
+	}
+
+	// firstFeed is the initial subreddit: the URL's ?sr= if present, else the
+	// first feed of the active profile.
+	firstFeed := func() string {
+		if querySR != "" {
+			return querySR
+		}
+		if f := scene.ActiveFeeds(); len(f) > 0 {
+			return f[0]
+		}
+		return ""
+	}
+
 	resize()
 
 	// Re-layout when the window (and thus the canvas) changes size.
@@ -98,19 +140,38 @@ func main() {
 			return nil
 		}
 		ev := args[0]
-		if !(ev.Get("metaKey").Bool() || ev.Get("ctrlKey").Bool()) {
+		key := ev.Get("key").String()
+		if ev.Get("metaKey").Bool() || ev.Get("ctrlKey").Bool() {
+			switch key {
+			case "+", "=": // Cmd+= is "zoom in" without Shift on US layouts
+				ev.Call("preventDefault")
+				setZoom(ui.StepZoom(zoom, +1))
+			case "-", "_":
+				ev.Call("preventDefault")
+				setZoom(ui.StepZoom(zoom, -1))
+			case "0":
+				ev.Call("preventDefault")
+				setZoom(1.0)
+			}
 			return nil
 		}
-		switch ev.Get("key").String() {
-		case "+", "=": // Cmd+= is "zoom in" without Shift on US layouts
-			ev.Call("preventDefault")
-			setZoom(ui.StepZoom(zoom, +1))
-		case "-", "_":
-			ev.Call("preventDefault")
-			setZoom(ui.StepZoom(zoom, -1))
-		case "0":
-			ev.Call("preventDefault")
-			setZoom(1.0)
+		// In the settings editor, route text into the add-subreddit field.
+		if scene.Mode == ui.ModeSettings {
+			switch {
+			case key == "Enter":
+				ev.Call("preventDefault")
+				scene.AddInputFeed()
+				persist()
+				render()
+			case key == "Backspace":
+				ev.Call("preventDefault")
+				scene.Backspace()
+				render()
+			case utf8.RuneCountInString(key) == 1:
+				ev.Call("preventDefault")
+				scene.TypeRune([]rune(key)[0])
+				render()
+			}
 		}
 		return nil
 	}))
@@ -125,13 +186,53 @@ func main() {
 				js.Global().Call("open", hit.Post.FullPermalink(), "_blank")
 			}
 		case ui.HitFeed:
-			scene.SetFeed(hit.Feed, scene.Sort)
-			render()
-			loadFeed(scene, scene.Subreddit, scene.Sort, render)
+			openFeed(hit.Feed)
 		case ui.HitSort:
-			scene.SetFeed(scene.Subreddit, hit.Sort)
+			scene.Sort = hit.Sort
+			if scene.Mode == ui.ModeSettings {
+				persist()
+				render()
+			} else {
+				openFeed(scene.Subreddit)
+			}
+		case ui.HitProfile:
+			scene.SetActive(hit.Profile)
+			persist()
+			openFeed(firstFeed())
+		case ui.HitSettings:
+			scene.OpenSettings()
 			render()
-			loadFeed(scene, scene.Subreddit, scene.Sort, render)
+
+		// --- settings editor ---
+		case ui.HitCloseSettings:
+			scene.CloseSettings()
+			persist()
+			render()
+			openFeed(firstFeed())
+		case ui.HitTheme:
+			scene.SetThemeName(hit.Value)
+			applyTheme()
+			persist()
+			render()
+		case ui.HitSelectProfile:
+			scene.SelectEdit(hit.Profile)
+			render()
+		case ui.HitRemoveFeed:
+			scene.RemoveFeed(hit.Profile, hit.Value)
+			persist()
+			render()
+		case ui.HitAddFeed:
+			scene.AddInputFeed()
+			persist()
+			render()
+		case ui.HitNewProfile:
+			scene.NewProfile()
+			persist()
+			render()
+		case ui.HitDeleteProfile:
+			scene.DeleteProfile(hit.Profile)
+			persist()
+			render()
 		}
 		return nil
 	}))
@@ -148,8 +249,52 @@ func main() {
 	}), map[string]any{"passive": false})
 
 	render()
-	loadFeed(scene, sr, sort, render)
+	// Load persisted settings, then open the initial feed.
+	go func() {
+		if resp, err := http.Get("/api/settings"); err == nil {
+			var st settings.Settings
+			if resp.StatusCode == http.StatusOK {
+				_ = json.NewDecoder(resp.Body).Decode(&st)
+			}
+			resp.Body.Close()
+			if len(st.Profiles) > 0 {
+				scene.SetProfiles(st.Profiles, st.Active)
+				scene.Sort = st.Sort
+				scene.ThemeName = st.Theme
+			}
+		}
+		if querySort != "" { // URL overrides the stored sort
+			scene.Sort = querySort
+		}
+		applyTheme()
+		openFeed(firstFeed())
+	}()
 	select {} // park so the callbacks stay live
+}
+
+// detectOS derives the OS token for [ui.ResolveTheme] from the browser.
+func detectOS() string {
+	nav := js.Global().Get("navigator")
+	p := ""
+	if uad := nav.Get("userAgentData"); uad.Truthy() {
+		p = uad.Get("platform").String()
+	}
+	if p == "" {
+		p = nav.Get("platform").String()
+	}
+	if p == "" {
+		p = nav.Get("userAgent").String()
+	}
+	switch ls := strings.ToLower(p); {
+	case strings.Contains(ls, "mac"):
+		return ui.OSMac
+	case strings.Contains(ls, "win"):
+		return ui.OSWindows
+	case strings.Contains(ls, "linux"), strings.Contains(ls, "x11"):
+		return ui.OSLinux
+	default:
+		return ""
+	}
 }
 
 // viewportSize reads the canvas element's current CSS pixel size (clientWidth

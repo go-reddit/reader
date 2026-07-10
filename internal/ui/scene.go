@@ -1,9 +1,10 @@
 // Package ui renders the reader — a Reddit-style topbar + sidebar + feed —
 // into an RGBA pixel buffer. Chrome and cards are drawn with the go-widgets
 // painter; text is anti-aliased TrueType (see text.go) so it stays clean at
-// any zoom / Retina scale. The package has no build tag, so its layout, hit-
-// testing and rendering are exercised by native `go test`; the wasm front-end
-// (cmd/front) drives the same Scene against a browser <canvas>.
+// any zoom / Retina scale. The sidebar is organised into profiles (tabs) that
+// each group a subset of subreddits — e.g. "Pro" and "Perso". The package has
+// no build tag, so its layout, hit-testing and rendering are exercised by
+// native `go test`; the wasm front-end (cmd/front) drives the same Scene.
 package ui
 
 import (
@@ -11,20 +12,19 @@ import (
 	"image"
 	"strings"
 
+	"github.com/go-reddit/reader/internal/settings"
 	"github.com/go-reddit/reddit"
 	"github.com/go-widgets/painter"
 	"github.com/go-widgets/toolkit"
 )
 
-// Minimum sensible surface, so a tiny window never produces a degenerate
-// (zero/negative) viewport.
+// Minimum sensible surface.
 const (
 	MinW = 360
 	MinH = 240
 )
 
-// Display-zoom bounds and step, applied by the front-end as a scale factor on
-// the whole UI (bigger fonts + metrics, not a stretched buffer).
+// Display-zoom bounds and step.
 const (
 	MinZoom  = 0.5
 	MaxZoom  = 3.0
@@ -34,26 +34,44 @@ const (
 // Sorts is the ordered set of listing sorts shown as topbar tabs.
 var Sorts = []string{"hot", "new", "top", "rising"}
 
-// DefaultFeeds seeds the sidebar's bookmark list. "" is the front page.
-var DefaultFeeds = []string{"", "golang", "rust", "programming", "webdev", "linux", "macos", "science"}
-
 // HitKind classifies what a click landed on.
 type HitKind int
 
 const (
-	HitNone HitKind = iota
-	HitPost         // a feed post (open it)
-	HitFeed         // a sidebar bookmark (switch subreddit)
-	HitSort         // a topbar sort tab (switch sort)
+	HitNone     HitKind = iota
+	HitPost             // a feed post (open it)
+	HitFeed             // a sidebar bookmark (switch subreddit)
+	HitSort             // a topbar sort tab (switch sort)
+	HitProfile          // a sidebar profile tab (switch active profile)
+	HitSettings         // the sidebar settings entry (open preferences)
+
+	// Settings-view actions (Mode == ModeSettings):
+	HitTheme         // Value = "system"|"light"|"dark"
+	HitSelectProfile // Profile = index being edited
+	HitRemoveFeed    // Profile = index, Value = feed
+	HitAddFeed       // commit the input into the edited profile
+	HitNewProfile
+	HitDeleteProfile // Profile = index
+	HitCloseSettings
 )
 
-// Hit is the result of [Scene.HitTest]: what was clicked and its payload.
+// Hit is the result of [Scene.HitTest].
 type Hit struct {
-	Kind HitKind
-	Post reddit.Post // Kind == HitPost
-	Feed string      // Kind == HitFeed ("" = front page)
-	Sort string      // Kind == HitSort
+	Kind    HitKind
+	Post    reddit.Post // HitPost
+	Feed    string      // HitFeed ("" = front page)
+	Sort    string      // HitSort
+	Profile int         // HitProfile / HitSelectProfile / HitRemoveFeed / HitDeleteProfile
+	Value   string      // HitTheme / HitRemoveFeed
 }
+
+// Mode selects which view the scene renders.
+type Mode int
+
+const (
+	ModeFeed     Mode = iota // the topbar + sidebar + feed
+	ModeSettings             // the in-canvas preferences editor
+)
 
 // Scene is the mutable reader state.
 type Scene struct {
@@ -62,26 +80,42 @@ type Scene struct {
 	theme     *toolkit.Theme
 	Subreddit string // selected subreddit ("" => front page)
 	Sort      string
-	Feeds     []string // sidebar bookmarks
+	Profiles  []settings.Profile // sidebar tabs
+	Active    int                // active profile index
 	Posts     []reddit.Post
 	Status    string
 	ScrollY   int
 	Scale     float64 // display scale (zoom × devicePixelRatio); 0 => 1
 
-	m        metrics
-	tabs     []tabHit
-	side     []sideHit
-	rows     []rowLayout
-	contentH int
+	// Preferences view.
+	Mode      Mode
+	ThemeName string // "system"|"light"|"dark" (persisted)
+	selEdit   int    // profile being edited in the settings view
+	input     string // the "add subreddit" text buffer
+
+	m         metrics
+	tabs      []tabHit
+	profTabs  []profTabHit
+	side      []sideHit
+	settingsR toolkit.Rect
+	rows      []rowLayout
+	contentH  int
+
+	sButtons []sButton   // clickable regions in the settings view
+	sInputR  toolkit.Rect
 }
 
 type rowLayout struct {
-	top  int // y in feed-content space (before ScrollY)
+	top  int
 	post reddit.Post
 }
 type tabHit struct {
 	rect toolkit.Rect
 	sort string
+}
+type profTabHit struct {
+	rect  toolkit.Rect
+	index int
 }
 type sideHit struct {
 	rect toolkit.Rect
@@ -89,39 +123,61 @@ type sideHit struct {
 }
 
 // NewScene returns a Scene at the default size with the light theme and the
-// default bookmark list.
+// default (Pro/Perso) profiles.
 func NewScene() *Scene {
+	d := settings.Default()
 	return &Scene{
-		W:     900,
-		H:     660,
-		theme: toolkit.DefaultLight(),
-		Sort:  "hot",
-		Scale: 1,
-		Feeds: append([]string(nil), DefaultFeeds...),
+		W:         900,
+		H:         660,
+		theme:     toolkit.DefaultLight(),
+		Sort:      d.Sort,
+		Scale:     1,
+		Profiles:  d.Profiles,
+		Active:    d.Active,
+		ThemeName: d.Theme,
 	}
 }
 
-// SetTheme swaps the palette (e.g. DefaultDark). A nil theme is ignored.
+// SetTheme swaps the palette. A nil theme is ignored.
 func (s *Scene) SetTheme(t *toolkit.Theme) {
 	if t != nil {
 		s.theme = t
 	}
 }
 
-// SetFeed records the current subreddit/sort selection (and makes sure the
-// subreddit is present in the sidebar). subreddit "" is the front page.
+// SetFeed records the current subreddit/sort selection. subreddit "" is the
+// front page.
 func (s *Scene) SetFeed(subreddit, sort string) {
 	s.Subreddit = strings.TrimPrefix(strings.TrimSpace(subreddit), "r/")
 	if sort == "" {
 		sort = "hot"
 	}
 	s.Sort = sort
-	if s.Subreddit != "" && !contains(s.Feeds, s.Subreddit) {
-		s.Feeds = append(s.Feeds, s.Subreddit)
-	}
 }
 
-// SetPosts replaces the visible posts and resets the scroll position.
+// SetProfiles replaces the profile list and active index (clamped).
+func (s *Scene) SetProfiles(profiles []settings.Profile, active int) {
+	s.Profiles = profiles
+	s.SetActive(active)
+}
+
+// SetActive selects the active profile (clamped to a valid index).
+func (s *Scene) SetActive(i int) {
+	if i < 0 || i >= len(s.Profiles) {
+		i = 0
+	}
+	s.Active = i
+}
+
+// ActiveFeeds returns the subreddits of the active profile.
+func (s *Scene) ActiveFeeds() []string {
+	if s.Active >= 0 && s.Active < len(s.Profiles) {
+		return s.Profiles[s.Active].Feeds
+	}
+	return nil
+}
+
+// SetPosts replaces the visible posts and resets scroll.
 func (s *Scene) SetPosts(posts []reddit.Post) {
 	s.Posts = posts
 	s.ScrollY = 0
@@ -183,12 +239,14 @@ func (s *Scene) Scroll(dy int) bool {
 	return s.ScrollY != old
 }
 
-// layout recomputes metrics + the tab/sidebar/feed rectangles.
+const appTitle = "go-reddit"
+
+// layout recomputes metrics + the tab / profile / sidebar / feed rectangles.
 func (s *Scene) layout() {
 	s.m = computeMetrics(s.effScale())
 	m := s.m
 
-	// Topbar tabs, laid out after the app title.
+	// Topbar sort tabs, after the app title.
 	s.tabs = s.tabs[:0]
 	x := 2*m.pad + m.header.width(appTitle)
 	for _, srt := range Sorts {
@@ -197,13 +255,28 @@ func (s *Scene) layout() {
 		x += w
 	}
 
-	// Sidebar bookmarks, below a "FEEDS" header row.
+	// Sidebar profile tabs (top row).
+	s.profTabs = s.profTabs[:0]
+	px := m.pad
+	for i, p := range s.Profiles {
+		w := m.tab.width(p.Name) + 2*m.tabPad
+		s.profTabs = append(s.profTabs, profTabHit{
+			rect:  toolkit.Rect{X: px, Y: m.topbarH, W: w, H: m.profileTabH},
+			index: i,
+		})
+		px += w + m.rpx(4)
+	}
+
+	// Sidebar feed items of the active profile, below a "FEEDS" header.
 	s.side = s.side[:0]
-	sy := m.topbarH + m.sideItemH
-	for _, f := range s.Feeds {
+	sy := m.topbarH + m.profileTabH + m.sideItemH
+	for _, f := range s.ActiveFeeds() {
 		s.side = append(s.side, sideHit{rect: toolkit.Rect{X: 0, Y: sy, W: m.sidebarW, H: m.sideItemH}, feed: f})
 		sy += m.sideItemH
 	}
+
+	// Settings entry pinned to the bottom of the sidebar.
+	s.settingsR = toolkit.Rect{X: 0, Y: s.H - m.footerH - m.sideItemH, W: m.sidebarW, H: m.sideItemH}
 
 	// Feed rows.
 	s.rows = s.rows[:0]
@@ -215,8 +288,11 @@ func (s *Scene) layout() {
 	s.contentH = y
 }
 
-// HitTest maps a click to an action (post/feed/sort) or HitNone.
+// HitTest maps a click to an action.
 func (s *Scene) HitTest(x, y int) Hit {
+	if s.Mode == ModeSettings {
+		return s.hitSettings(x, y)
+	}
 	s.layout()
 	m := s.m
 	switch {
@@ -230,6 +306,14 @@ func (s *Scene) HitTest(x, y int) Hit {
 	case y >= s.H-m.footerH:
 		return Hit{}
 	case x < m.sidebarW:
+		for _, t := range s.profTabs {
+			if t.rect.Contains(x, y) {
+				return Hit{Kind: HitProfile, Profile: t.index}
+			}
+		}
+		if s.settingsR.Contains(x, y) {
+			return Hit{Kind: HitSettings}
+		}
 		for _, it := range s.side {
 			if it.rect.Contains(x, y) {
 				return Hit{Kind: HitFeed, Feed: it.feed}
@@ -247,10 +331,12 @@ func (s *Scene) HitTest(x, y int) Hit {
 	}
 }
 
-const appTitle = "go-reddit"
-
 // Draw paints the whole scene into buf (s.W*s.H*4 RGBA bytes).
 func (s *Scene) Draw(buf []byte) {
+	if s.Mode == ModeSettings {
+		s.drawSettings(buf)
+		return
+	}
 	s.layout()
 	m := s.m
 	p := painter.NewPixelPainter(buf, s.W, s.H)
@@ -281,7 +367,21 @@ func (s *Scene) Draw(buf []byte) {
 
 	// --- sidebar ---
 	p.FillRect(painter.Rect{X: 0, Y: m.topbarH, W: m.sidebarW, H: s.H - m.topbarH - m.footerH}, th.SurfaceAlt)
-	m.side.draw(img, m.pad, m.topbarH+(m.sideItemH-m.side.height)/2, "FEEDS", muteS)
+
+	// Profile tabs.
+	for _, t := range s.profTabs {
+		active := t.index == s.Active
+		col := th.OnSurface
+		if active {
+			p.FillRoundRect(painter.Rect{X: t.rect.X, Y: t.rect.Y + m.rpx(3), W: t.rect.W, H: t.rect.H - m.rpx(6)}, m.rpx(5), th.Accent)
+			col = onAccent
+		}
+		m.tab.draw(img, t.rect.X+m.tabPad, t.rect.Y+(m.profileTabH-m.tab.height)/2, s.Profiles[t.index].Name, col)
+	}
+
+	// FEEDS header + active-profile feeds.
+	headerY := m.topbarH + m.profileTabH
+	m.side.draw(img, m.pad, headerY+(m.sideItemH-m.side.height)/2, "FEEDS", muteS)
 	for _, it := range s.side {
 		label := "Front page"
 		if it.feed != "" {
@@ -296,6 +396,10 @@ func (s *Scene) Draw(buf []byte) {
 		}
 		m.side.draw(img, m.pad, it.rect.Y+(m.sideItemH-m.side.height)/2, label, col)
 	}
+
+	// Settings entry (pinned bottom) + sidebar border.
+	p.FillRect(painter.Rect{X: 0, Y: s.settingsR.Y - 1, W: m.sidebarW, H: 1}, th.Border)
+	m.side.draw(img, m.pad, s.settingsR.Y+(m.sideItemH-m.side.height)/2, "Settings", muteS)
 	p.FillRect(painter.Rect{X: m.sidebarW - 1, Y: m.topbarH, W: 1, H: s.H - m.topbarH - m.footerH}, th.Border)
 
 	// --- topbar ---
@@ -332,19 +436,16 @@ func (s *Scene) drawPost(p *painter.PixelPainter, img *image.RGBA, post reddit.P
 	p.FillRoundRect(card, rad, th.Surface)
 	p.StrokeRoundRect(card, rad, th.Border, 1)
 
-	// Score badge (left column).
 	scoreStr := formatScore(post.Score)
 	m.score.draw(img, card.X+(m.scoreW-m.score.width(scoreStr))/2, y+m.pad, scoreStr, th.Accent)
 	m.meta.draw(img, card.X+(m.scoreW-m.meta.width("pts"))/2, y+m.pad+m.score.height, "pts", mute(th.OnSurface, th.Surface))
 
-	// Title (up to two wrapped lines).
 	tx := card.X + m.scoreW
 	availW := card.W - m.scoreW - m.pad
 	for i, ln := range wrapText(m.title, post.Title, availW, 2) {
 		m.title.draw(img, tx, y+m.pad+i*m.title.height, ln, th.OnSurface)
 	}
 
-	// Meta line, with optional flair on the right.
 	metaY := y + m.rowH - m.pad - m.meta.height
 	m.meta.draw(img, tx, metaY, metaLine(post), mute(th.OnSurface, th.Surface))
 	if post.Flair != "" {
@@ -355,13 +456,12 @@ func (s *Scene) drawPost(p *painter.PixelPainter, img *image.RGBA, post reddit.P
 // --- metrics ---------------------------------------------------------------
 
 type metrics struct {
-	scale                                                    float64
-	pad, topbarH, sidebarW, footerH, rowH, rowGap, scoreW    int
-	sideItemH, tabPad                                        int
-	title, meta, score, header, side, tab                    textFace
+	scale                                                 float64
+	pad, topbarH, sidebarW, footerH, rowH, rowGap, scoreW int
+	sideItemH, tabPad, profileTabH                        int
+	title, meta, score, header, side, tab                 textFace
 }
 
-// rpx scales a base pixel value by the metric scale (min 1).
 func (m metrics) rpx(base float64) int { return scalePx(base, m.scale) }
 
 func scalePx(base, scale float64) int {
@@ -382,10 +482,11 @@ func computeMetrics(scale float64) metrics {
 	m.side = getFace(scalePx(13, scale), false)
 	m.tab = getFace(scalePx(13, scale), true)
 	m.scoreW = scalePx(56, scale)
-	m.sidebarW = scalePx(170, scale)
+	m.sidebarW = scalePx(180, scale)
 	m.rowGap = scalePx(8, scale)
 	m.tabPad = scalePx(10, scale)
 	m.sideItemH = m.side.height + scalePx(10, scale)
+	m.profileTabH = m.tab.height + scalePx(12, scale)
 	m.topbarH = m.header.height + 2*m.pad
 	m.footerH = m.meta.height + m.pad
 	m.rowH = 2*m.pad + 2*m.title.height + scalePx(4, scale) + m.meta.height
@@ -502,13 +603,4 @@ func ellipsize(tf textFace, lines []string, maxW int) []string {
 func mute(fg, bg toolkit.RGBA) toolkit.RGBA {
 	blend := func(a, b uint8) uint8 { return uint8((int(a)*45 + int(b)*55) / 100) }
 	return toolkit.RGBA{R: blend(fg.R, bg.R), G: blend(fg.G, bg.G), B: blend(fg.B, bg.B), A: 0xFF}
-}
-
-func contains(ss []string, v string) bool {
-	for _, s := range ss {
-		if s == v {
-			return true
-		}
-	}
-	return false
 }

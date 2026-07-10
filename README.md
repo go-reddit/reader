@@ -25,9 +25,21 @@ with **zero cgo** (`CGO_ENABLED=0`).
 ```
 
 The layout mirrors the Reddit web UI: a **topbar** with sort tabs
-(hot/new/top/rising) and the current feed, a **sidebar** of bookmarked
-subreddits, and the scrollable **feed** of post cards. Clicking a sidebar feed
-or a sort tab reloads; clicking a post opens it.
+(hot/new/top/rising) and the current feed, a **sidebar** of subreddits grouped
+into **profiles (tabs)** — e.g. keep your *Pro* and *Perso* feeds separate — and
+the scrollable **feed** of post cards. Clicking a sidebar feed or a sort tab
+reloads; clicking a post opens it; clicking a profile tab switches the feed
+set.
+
+**Preferences** live in an in-canvas editor (click *Settings* in the sidebar) —
+also drawn with go-widgets, no separate HTML page: pick the theme, the default
+sort, and create/rename/delete profiles, adding or removing subreddits as
+chips. Everything persists to `~/Library/Application Support/go-reddit-reader/
+settings.json` (XDG/AppData off macOS).
+
+**Native look & feel per OS**: the theme adapts to the host — WhiteSur (macOS),
+Adwaita (GNOME/Linux) or Fluent (Windows) — in light or dark following the
+system, or forced from Settings.
 
 Three design choices worth calling out:
 

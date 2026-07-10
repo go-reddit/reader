@@ -3,14 +3,112 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"testing/fstest"
 
+	"github.com/go-reddit/reader/internal/settings"
 	"github.com/go-reddit/reddit"
 )
+
+// fakeStore is an in-memory SettingsStore.
+type fakeStore struct {
+	cur      settings.Settings
+	loadErr  error
+	saveErr  error
+	saved    *settings.Settings
+}
+
+func (f *fakeStore) Load() (settings.Settings, error) { return f.cur, f.loadErr }
+func (f *fakeStore) Save(s settings.Settings) error {
+	if f.saveErr != nil {
+		return f.saveErr
+	}
+	f.saved = &s
+	return nil
+}
+
+func TestSettingsGet(t *testing.T) {
+	srv := New(&stubFetcher{}, testAssets())
+	srv.SetSettings(&fakeStore{cur: settings.Settings{Sort: "top", Profiles: []settings.Profile{{Name: "P"}}}})
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/settings", nil))
+	if rr.Code != 200 {
+		t.Fatalf("status = %d", rr.Code)
+	}
+	var got settings.Settings
+	json.Unmarshal(rr.Body.Bytes(), &got)
+	if got.Sort != "top" {
+		t.Errorf("got %+v", got)
+	}
+}
+
+func TestSettingsPutSanitizes(t *testing.T) {
+	fs := &fakeStore{}
+	srv := New(&stubFetcher{}, testAssets())
+	srv.SetSettings(fs)
+	body := `{"profiles":[{"name":"P","feeds":["r/golang"," rust ","golang"]}],"sort":"new","theme":"dark"}`
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(body)))
+	if rr.Code != 200 {
+		t.Fatalf("status = %d", rr.Code)
+	}
+	if fs.saved == nil || len(fs.saved.Profiles[0].Feeds) != 2 || fs.saved.Profiles[0].Feeds[0] != "golang" {
+		t.Errorf("saved feeds not sanitised: %+v", fs.saved)
+	}
+}
+
+func TestSettingsUnavailable(t *testing.T) {
+	srv := New(&stubFetcher{}, testAssets()) // no store set
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/settings", nil))
+	if rr.Code != http.StatusNotImplemented {
+		t.Fatalf("status = %d, want 501", rr.Code)
+	}
+}
+
+func TestSettingsBadJSON(t *testing.T) {
+	srv := New(&stubFetcher{}, testAssets())
+	srv.SetSettings(&fakeStore{})
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader("{bad")))
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+}
+
+func TestSettingsMethodNotAllowed(t *testing.T) {
+	srv := New(&stubFetcher{}, testAssets())
+	srv.SetSettings(&fakeStore{})
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, httptest.NewRequest(http.MethodDelete, "/api/settings", nil))
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 405", rr.Code)
+	}
+}
+
+func TestSettingsLoadError(t *testing.T) {
+	srv := New(&stubFetcher{}, testAssets())
+	srv.SetSettings(&fakeStore{loadErr: errors.New("disk gone")})
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/settings", nil))
+	if rr.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d", rr.Code)
+	}
+}
+
+func TestSettingsSaveError(t *testing.T) {
+	srv := New(&stubFetcher{}, testAssets())
+	srv.SetSettings(&fakeStore{saveErr: errors.New("readonly")})
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(`{"sort":"hot"}`)))
+	if rr.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d", rr.Code)
+	}
+}
 
 // stubFetcher records the arguments it was called with and returns canned
 // results, so the HTTP layer is tested without a live Reddit.

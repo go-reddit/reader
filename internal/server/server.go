@@ -11,11 +11,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/go-reddit/reader/internal/settings"
 	"github.com/go-reddit/reddit"
 )
 
@@ -27,11 +29,19 @@ type Fetcher interface {
 	Comments(ctx context.Context, subreddit, id string, opts reddit.ListingOptions) (*reddit.PostWithComments, error)
 }
 
+// SettingsStore persists the reader's preferences (profiles/tabs, sort,
+// theme). A nil store disables the settings endpoints.
+type SettingsStore interface {
+	Load() (settings.Settings, error)
+	Save(settings.Settings) error
+}
+
 // Server wires the Reddit client to an http.Handler.
 type Server struct {
-	client Fetcher
-	assets fs.FS
-	mux    *http.ServeMux
+	client   Fetcher
+	assets   fs.FS
+	settings SettingsStore
+	mux      *http.ServeMux
 }
 
 // New builds a Server serving assets (the embedded web bundle) and proxying
@@ -41,9 +51,14 @@ func New(client Fetcher, assets fs.FS) *Server {
 	s.mux.Handle("/", http.FileServer(http.FS(assets)))
 	s.mux.HandleFunc("/api/feed", s.handleFeed)
 	s.mux.HandleFunc("/api/comments", s.handleComments)
+	s.mux.HandleFunc("/api/settings", s.handleSettings)
 	s.mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	return s
 }
+
+// SetSettings attaches a settings store, enabling the /api/settings and
+// /settings endpoints.
+func (s *Server) SetSettings(store SettingsStore) { s.settings = store }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.ServeHTTP(w, r) }
 
@@ -103,6 +118,41 @@ func (s *Server) handleComments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, res)
+}
+
+// handleSettings serves GET (current settings) and PUT (replace settings) at
+// /api/settings. Feeds in incoming profiles are sanitised before saving.
+func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
+	if s.settings == nil {
+		http.Error(w, `{"error":"settings unavailable"}`, http.StatusNotImplemented)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		cur, err := s.settings.Load()
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		writeJSON(w, cur)
+	case http.MethodPut, http.MethodPost:
+		var in settings.Settings
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
+			http.Error(w, `{"error":"invalid settings json"}`, http.StatusBadRequest)
+			return
+		}
+		for i := range in.Profiles {
+			in.Profiles[i].Feeds = settings.SanitizeFeeds(in.Profiles[i].Feeds)
+		}
+		if err := s.settings.Save(in); err != nil {
+			writeError(w, err)
+			return
+		}
+		writeJSON(w, in)
+	default:
+		w.Header().Set("Allow", "GET, PUT")
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+	}
 }
 
 // writeJSON encodes v as JSON with the appropriate content type.
