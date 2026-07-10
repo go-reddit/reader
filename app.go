@@ -1,9 +1,13 @@
 package main
 
 import (
+	"io"
+	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/go-reddit/reddit"
 )
@@ -25,10 +29,11 @@ type options struct {
 // optionsFromEnv seeds an options from environment variables. Flags in main
 // override these. OAuth credentials belong in the environment (never flags),
 // so they don't leak into the process table.
-// defaultUserAgent identifies the reader to Reddit. A descriptive, non-generic
-// User-Agent is the minimum Reddit asks of anonymous traffic; override it with
-// READER_USER_AGENT (Reddit's format: "<platform>:<app>:<version> (by /u/you)").
-const defaultUserAgent = "macos:go-reddit-reader:0.1 (+https://github.com/go-reddit/reader)"
+// defaultUserAgent makes anonymous traffic look like a real browser. Reddit
+// 403s generic / library User-Agents even on residential IPs; a Safari string
+// (plus a warmed cookie jar) is what an actual browser sends to read the public
+// ".json" endpoints without logging in. Override with READER_USER_AGENT.
+const defaultUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15"
 
 func optionsFromEnv(getenv func(string) string) options {
 	return options{
@@ -53,10 +58,41 @@ func (o options) newClient() *reddit.Client {
 	switch {
 	case o.oauthID != "" && o.oauthSecret != "" && o.oauthUser != "" && o.oauthPass != "":
 		opts = append(opts, reddit.WithOAuthScript(o.oauthID, o.oauthSecret, o.oauthUser, o.oauthPass))
+		return reddit.NewClient(opts...)
 	case o.oauthID != "" && o.oauthSecret != "":
 		opts = append(opts, reddit.WithOAuth(o.oauthID, o.oauthSecret))
+		return reddit.NewClient(opts...)
+	}
+	// Anonymous: emulate a browser session — a cookie jar warmed from the
+	// home page, so the ".json" reads carry the same anti-bot cookies a
+	// browser would, dodging the residential 403.
+	jar, _ := cookiejar.New(nil)
+	hc := &http.Client{Timeout: 30 * time.Second, Jar: jar}
+	opts = append(opts, reddit.WithHTTPClient(hc))
+	if warmupOnStartup {
+		go warmupCookies(hc, o.userAgent)
 	}
 	return reddit.NewClient(opts...)
+}
+
+// warmupOnStartup gates the cookie warm-up so unit tests stay network-free;
+// main sets it true.
+var warmupOnStartup = false
+
+// warmupCookies loads the Reddit home page once so the shared jar collects the
+// cookies Reddit hands a browser; failures are ignored (cookies are often set
+// even on a 403 response).
+func warmupCookies(hc *http.Client, ua string) {
+	req, err := http.NewRequest(http.MethodGet, "https://www.reddit.com/", nil)
+	if err != nil {
+		return
+	}
+	req.Header.Set("User-Agent", ua)
+	req.Header.Set("Accept", "text/html,application/xhtml+xml")
+	if resp, err := hc.Do(req); err == nil {
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}
 }
 
 // oauthClientFor builds an OAuth-authenticated Reddit client from stored

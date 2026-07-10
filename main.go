@@ -28,6 +28,7 @@ func main() {
 	// Cocoa's run loop must own the main OS thread.
 	runtime.LockOSThread()
 
+	warmupOnStartup = true // browser-cookie warm-up is fine outside tests
 	opts := optionsFromEnv(getenv)
 	var demo, serveOnly, useHTTP bool
 	flag.StringVar(&opts.subreddit, "sr", opts.subreddit, "subreddit to open (empty = front page)")
