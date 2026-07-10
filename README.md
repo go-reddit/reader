@@ -24,11 +24,18 @@ with **zero cgo** (`CGO_ENABLED=0`).
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
+The layout mirrors the Reddit web UI: a **topbar** with sort tabs
+(hot/new/top/rising) and the current feed, a **sidebar** of bookmarked
+subreddits, and the scrollable **feed** of post cards. Clicking a sidebar feed
+or a sort tab reloads; clicking a post opens it.
+
 Three design choices worth calling out:
 
-1. **go-widgets, not HTML.** The post list, score badges, wrapped titles and
-   status bar are all painted pixel-by-pixel by the go-widgets toolkit, exactly
-   as they would be in a native window — the WebView is just a surface.
+1. **go-widgets, not HTML.** The cards, score badges, sidebar and topbar are
+   painted by the go-widgets painter into an RGBA buffer, exactly as in a
+   native window — the WebView is just a surface. Text is anti-aliased
+   TrueType (the embedded Go fonts) rendered into that same buffer at device
+   resolution, so it stays crisp at any zoom or on a Retina display.
 2. **CGO=0 everywhere.** The WKWebView, NSWindow and NSApplication are driven
    through the Objective-C runtime via
    [purego](https://github.com/ebitengine/purego). The shipped binary links

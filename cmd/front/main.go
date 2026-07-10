@@ -42,22 +42,25 @@ func main() {
 
 	ctx := canvas.Call("getContext", "2d")
 
-	// The canvas fills the window; the pixel buffer, ImageData and scene
-	// surface are all (re)sized to match. Drag the window edge and the feed
-	// re-lays-out at the new size instead of stretching.
+	// The canvas fills the window and the buffer is rendered at DEVICE
+	// resolution (CSS size × devicePixelRatio, displayed 1:1) so the
+	// anti-aliased text stays crisp with no upscale blur. Zoom is a UI scale
+	// factor (bigger fonts + metrics), combined with the device ratio.
 	var (
 		imageData js.Value
 		buf       []byte
 		zoom      = 1.0
 	)
-	// The logical surface is the canvas (window) size divided by the zoom
-	// factor, so a larger zoom renders a smaller buffer the canvas magnifies:
-	// bigger text and cards, fewer visible at once.
 	resize := func() {
+		dpr := js.Global().Get("devicePixelRatio").Float()
+		if dpr <= 0 {
+			dpr = 1
+		}
 		cw := viewportSize(canvas, "clientWidth", 900)
 		ch := viewportSize(canvas, "clientHeight", 660)
-		w := ui.LogicalSize(cw, zoom)
-		h := ui.LogicalSize(ch, zoom)
+		w := int(float64(cw)*dpr + 0.5)
+		h := int(float64(ch)*dpr + 0.5)
+		scene.Scale = zoom * dpr
 		scene.Resize(w, h)
 		w, h = scene.W, scene.H // Resize clamps to a minimum
 		canvas.Set("width", w)
@@ -112,11 +115,23 @@ func main() {
 		return nil
 	}))
 
-	// Click: map to a post and open it in a new tab.
+	// Click: open a post, or switch feed/sort (which reloads) via the sidebar
+	// and topbar.
 	canvas.Call("addEventListener", "click", js.FuncOf(func(_ js.Value, args []js.Value) any {
 		x, y := eventXY(canvas, args)
-		if post, ok := scene.HitTest(x, y); ok && post.FullPermalink() != "" {
-			js.Global().Call("open", post.FullPermalink(), "_blank")
+		switch hit := scene.HitTest(x, y); hit.Kind {
+		case ui.HitPost:
+			if hit.Post.FullPermalink() != "" {
+				js.Global().Call("open", hit.Post.FullPermalink(), "_blank")
+			}
+		case ui.HitFeed:
+			scene.SetFeed(hit.Feed, scene.Sort)
+			render()
+			loadFeed(scene, scene.Subreddit, scene.Sort, render)
+		case ui.HitSort:
+			scene.SetFeed(scene.Subreddit, hit.Sort)
+			render()
+			loadFeed(scene, scene.Subreddit, scene.Sort, render)
 		}
 		return nil
 	}))

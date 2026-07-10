@@ -8,9 +8,8 @@
   html, body { margin: 0; width: 100%; height: 100%; background: #1b3a8f; overflow: hidden; }
   #screen {
     display: block;
-    image-rendering: pixelated;         /* crisp upscale of the pixel buffer */
     background: #d9dbe0;
-    width: 100vw; height: 100vh;        /* fill the window; JS resizes the buffer to match */
+    width: 100vw; height: 100vh;        /* fill the window; JS renders the buffer at device resolution */
     cursor: pointer;
   }
   #err {

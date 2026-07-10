@@ -1,11 +1,14 @@
-// Package ui renders a Reddit feed into an RGBA pixel buffer using the
-// go-widgets toolkit. It has no build tag so the layout + hit-testing logic
-// is exercised by native `go test` against a plain []byte, while the wasm
-// front-end (cmd/front) drives the same Scene against a browser <canvas>.
+// Package ui renders the reader — a Reddit-style topbar + sidebar + feed —
+// into an RGBA pixel buffer. Chrome and cards are drawn with the go-widgets
+// painter; text is anti-aliased TrueType (see text.go) so it stays clean at
+// any zoom / Retina scale. The package has no build tag, so its layout, hit-
+// testing and rendering are exercised by native `go test`; the wasm front-end
+// (cmd/front) drives the same Scene against a browser <canvas>.
 package ui
 
 import (
 	"fmt"
+	"image"
 	"strings"
 
 	"github.com/go-reddit/reddit"
@@ -13,118 +16,135 @@ import (
 	"github.com/go-widgets/toolkit"
 )
 
-// Surface dimensions of the reader canvas, in logical pixels.
-const (
-	SurfaceW = 900
-	SurfaceH = 660
-)
-
-// Layout constants.
-const (
-	headerH = 40
-	footerH = 20
-	pad     = 8
-	scoreW  = 60 // left column width for the score badge
-	lineH   = 12 // baseline step between text lines
-	rowH    = 66 // fixed height of one post row
-	rowGap  = 6
-)
-
-// Scene is the mutable reader state: which feed is shown, the posts in it,
-// scroll position, and a transient status line. It is safe to construct with
-// the zero value plus [NewScene]; all rendering goes through [Scene.Draw].
-type Scene struct {
-	W, H int
-
-	theme     *toolkit.Theme
-	Subreddit string // e.g. "golang" ("" => front page)
-	Sort      string // e.g. "hot"
-	Posts     []reddit.Post
-	Status    string // footer message ("Loading…", error text, "42 posts")
-	ScrollY   int
-
-	// rows records each post's on-content rectangle (pre-scroll) so
-	// HitTest can map a click back to a post without re-deriving layout.
-	rows     []rowLayout
-	contentH int
-}
-
-type rowLayout struct {
-	top  int // y in content space (before ScrollY is applied)
-	post reddit.Post
-}
-
-// NewScene returns a Scene sized to the standard surface with the default
-// light theme applied.
-func NewScene() *Scene {
-	return &Scene{
-		W:     SurfaceW,
-		H:     SurfaceH,
-		theme: toolkit.DefaultLight(),
-		Sort:  "hot",
-	}
-}
-
 // Minimum sensible surface, so a tiny window never produces a degenerate
 // (zero/negative) viewport.
 const (
-	MinW = 320
+	MinW = 360
 	MinH = 240
 )
 
-// Display-zoom bounds and step. The front-end divides the canvas size by the
-// zoom factor to get the logical surface it renders into, so a larger zoom
-// yields a smaller logical buffer that the canvas magnifies — bigger text and
-// cards, fewer visible at once.
+// Display-zoom bounds and step, applied by the front-end as a scale factor on
+// the whole UI (bigger fonts + metrics, not a stretched buffer).
 const (
 	MinZoom  = 0.5
 	MaxZoom  = 3.0
 	ZoomStep = 0.1
 )
 
-// ClampZoom constrains z to [MinZoom, MaxZoom].
-func ClampZoom(z float64) float64 {
-	switch {
-	case z < MinZoom:
-		return MinZoom
-	case z > MaxZoom:
-		return MaxZoom
-	default:
-		return z
+// Sorts is the ordered set of listing sorts shown as topbar tabs.
+var Sorts = []string{"hot", "new", "top", "rising"}
+
+// DefaultFeeds seeds the sidebar's bookmark list. "" is the front page.
+var DefaultFeeds = []string{"", "golang", "rust", "programming", "webdev", "linux", "macos", "science"}
+
+// HitKind classifies what a click landed on.
+type HitKind int
+
+const (
+	HitNone HitKind = iota
+	HitPost         // a feed post (open it)
+	HitFeed         // a sidebar bookmark (switch subreddit)
+	HitSort         // a topbar sort tab (switch sort)
+)
+
+// Hit is the result of [Scene.HitTest]: what was clicked and its payload.
+type Hit struct {
+	Kind HitKind
+	Post reddit.Post // Kind == HitPost
+	Feed string      // Kind == HitFeed ("" = front page)
+	Sort string      // Kind == HitSort
+}
+
+// Scene is the mutable reader state.
+type Scene struct {
+	W, H int
+
+	theme     *toolkit.Theme
+	Subreddit string // selected subreddit ("" => front page)
+	Sort      string
+	Feeds     []string // sidebar bookmarks
+	Posts     []reddit.Post
+	Status    string
+	ScrollY   int
+	Scale     float64 // display scale (zoom × devicePixelRatio); 0 => 1
+
+	m        metrics
+	tabs     []tabHit
+	side     []sideHit
+	rows     []rowLayout
+	contentH int
+}
+
+type rowLayout struct {
+	top  int // y in feed-content space (before ScrollY)
+	post reddit.Post
+}
+type tabHit struct {
+	rect toolkit.Rect
+	sort string
+}
+type sideHit struct {
+	rect toolkit.Rect
+	feed string
+}
+
+// NewScene returns a Scene at the default size with the light theme and the
+// default bookmark list.
+func NewScene() *Scene {
+	return &Scene{
+		W:     900,
+		H:     660,
+		theme: toolkit.DefaultLight(),
+		Sort:  "hot",
+		Scale: 1,
+		Feeds: append([]string(nil), DefaultFeeds...),
 	}
 }
 
-// StepZoom moves the zoom one step in the given direction (+1 in, -1 out, 0 no
-// change), rounded to the step grid and clamped. Any other dir is treated as 0.
-func StepZoom(z float64, dir int) float64 {
-	switch {
-	case dir > 0:
-		z += ZoomStep
-	case dir < 0:
-		z -= ZoomStep
+// SetTheme swaps the palette (e.g. DefaultDark). A nil theme is ignored.
+func (s *Scene) SetTheme(t *toolkit.Theme) {
+	if t != nil {
+		s.theme = t
 	}
-	// Round to the nearest ZoomStep so repeated presses stay on a clean grid.
-	z = float64(int(z/ZoomStep+0.5)) * ZoomStep
-	return ClampZoom(z)
 }
 
-// LogicalSize maps a canvas dimension in device/CSS pixels to the logical
-// surface dimension at the given zoom (canvasPx / zoom), never below 1.
-func LogicalSize(canvasPx int, zoom float64) int {
-	if zoom <= 0 {
-		zoom = 1
+// SetFeed records the current subreddit/sort selection (and makes sure the
+// subreddit is present in the sidebar). subreddit "" is the front page.
+func (s *Scene) SetFeed(subreddit, sort string) {
+	s.Subreddit = strings.TrimPrefix(strings.TrimSpace(subreddit), "r/")
+	if sort == "" {
+		sort = "hot"
 	}
-	n := int(float64(canvasPx)/zoom + 0.5)
-	if n < 1 {
-		n = 1
+	s.Sort = sort
+	if s.Subreddit != "" && !contains(s.Feeds, s.Subreddit) {
+		s.Feeds = append(s.Feeds, s.Subreddit)
 	}
-	return n
 }
 
-// Resize sets the surface to w×h logical pixels (clamped to a minimum) and
-// re-clamps the scroll position so it stays valid for the new viewport. The
-// front-end calls this whenever the window/canvas changes size, then redraws;
-// the layout adapts (wider cards, more rows visible) rather than stretching.
+// SetPosts replaces the visible posts and resets the scroll position.
+func (s *Scene) SetPosts(posts []reddit.Post) {
+	s.Posts = posts
+	s.ScrollY = 0
+}
+
+// FeedName returns a human-readable label for the current feed.
+func (s *Scene) FeedName() string { return s.feedLabel() }
+
+func (s *Scene) feedLabel() string {
+	if s.Subreddit == "" {
+		return "Front page · " + s.Sort
+	}
+	return "r/" + s.Subreddit + " · " + s.Sort
+}
+
+func (s *Scene) effScale() float64 {
+	if s.Scale <= 0 {
+		return 1
+	}
+	return s.Scale
+}
+
+// Resize sets the surface to w×h pixels (clamped) and re-clamps scroll.
 func (s *Scene) Resize(w, h int) {
 	if w < MinW {
 		w = MinW
@@ -139,56 +159,7 @@ func (s *Scene) Resize(w, h int) {
 	}
 }
 
-// SetTheme swaps the palette (e.g. DefaultDark). A nil theme is ignored.
-func (s *Scene) SetTheme(t *toolkit.Theme) {
-	if t != nil {
-		s.theme = t
-	}
-}
-
-// SetFeed records the current subreddit/sort selection so the header reflects
-// it. subreddit "" renders as the front page.
-func (s *Scene) SetFeed(subreddit, sort string) {
-	s.Subreddit = strings.TrimPrefix(strings.TrimSpace(subreddit), "r/")
-	if sort == "" {
-		sort = "hot"
-	}
-	s.Sort = sort
-}
-
-// SetPosts replaces the visible posts and resets the scroll position.
-func (s *Scene) SetPosts(posts []reddit.Post) {
-	s.Posts = posts
-	s.ScrollY = 0
-}
-
-// FeedName returns a human-readable label for the current feed, e.g.
-// "r/golang · hot" or "front page · new". Used by the front-end status line.
-func (s *Scene) FeedName() string { return s.feedLabel() }
-
-// feedLabel is the human-readable name of the current feed.
-func (s *Scene) feedLabel() string {
-	if s.Subreddit == "" {
-		return "front page · " + s.Sort
-	}
-	return "r/" + s.Subreddit + " · " + s.Sort
-}
-
-// viewportH is the height of the scrollable list area between header and
-// footer.
-func (s *Scene) viewportH() int { return s.H - headerH - footerH }
-
-// layout (re)computes the per-row rectangles and total content height. Called
-// at the top of Draw and by HitTest/Scroll so geometry stays in one place.
-func (s *Scene) layout() {
-	s.rows = s.rows[:0]
-	y := pad
-	for _, p := range s.Posts {
-		s.rows = append(s.rows, rowLayout{top: y, post: p})
-		y += rowH + rowGap
-	}
-	s.contentH = y
-}
+func (s *Scene) viewportH() int { return s.H - s.m.topbarH - s.m.footerH }
 
 // MaxScroll is the largest valid ScrollY for the current content.
 func (s *Scene) MaxScroll() int {
@@ -198,9 +169,7 @@ func (s *Scene) MaxScroll() int {
 	return 0
 }
 
-// Scroll adjusts the vertical scroll by dy pixels, clamped to the content.
-// Returns true if the position actually changed (so callers can skip a
-// redraw when it didn't).
+// Scroll adjusts the vertical scroll by dy, clamped. Returns whether it moved.
 func (s *Scene) Scroll(dy int) bool {
 	s.layout()
 	old := s.ScrollY
@@ -214,99 +183,239 @@ func (s *Scene) Scroll(dy int) bool {
 	return s.ScrollY != old
 }
 
-// HitTest maps a click at (x,y) to a post. It returns the post and true when
-// the click lands on a row inside the viewport, or a zero Post and false
-// otherwise (header, footer, gaps, empty space).
-func (s *Scene) HitTest(x, y int) (reddit.Post, bool) {
-	if y < headerH || y >= s.H-footerH {
-		return reddit.Post{}, false
+// layout recomputes metrics + the tab/sidebar/feed rectangles.
+func (s *Scene) layout() {
+	s.m = computeMetrics(s.effScale())
+	m := s.m
+
+	// Topbar tabs, laid out after the app title.
+	s.tabs = s.tabs[:0]
+	x := 2*m.pad + m.header.width(appTitle)
+	for _, srt := range Sorts {
+		w := m.tab.width(srt) + 2*m.tabPad
+		s.tabs = append(s.tabs, tabHit{rect: toolkit.Rect{X: x, Y: 0, W: w, H: m.topbarH}, sort: srt})
+		x += w
 	}
-	s.layout()
-	cy := y - headerH + s.ScrollY // to content space
-	for _, r := range s.rows {
-		if cy >= r.top && cy < r.top+rowH && x >= pad && x < s.W-pad {
-			return r.post, true
-		}
+
+	// Sidebar bookmarks, below a "FEEDS" header row.
+	s.side = s.side[:0]
+	sy := m.topbarH + m.sideItemH
+	for _, f := range s.Feeds {
+		s.side = append(s.side, sideHit{rect: toolkit.Rect{X: 0, Y: sy, W: m.sidebarW, H: m.sideItemH}, feed: f})
+		sy += m.sideItemH
 	}
-	return reddit.Post{}, false
+
+	// Feed rows.
+	s.rows = s.rows[:0]
+	y := m.pad
+	for _, p := range s.Posts {
+		s.rows = append(s.rows, rowLayout{top: y, post: p})
+		y += m.rowH + m.rowGap
+	}
+	s.contentH = y
 }
 
-// Draw paints the whole scene into buf, an RGBA buffer of s.W*s.H*4 bytes.
+// HitTest maps a click to an action (post/feed/sort) or HitNone.
+func (s *Scene) HitTest(x, y int) Hit {
+	s.layout()
+	m := s.m
+	switch {
+	case y < m.topbarH:
+		for _, t := range s.tabs {
+			if t.rect.Contains(x, y) {
+				return Hit{Kind: HitSort, Sort: t.sort}
+			}
+		}
+		return Hit{}
+	case y >= s.H-m.footerH:
+		return Hit{}
+	case x < m.sidebarW:
+		for _, it := range s.side {
+			if it.rect.Contains(x, y) {
+				return Hit{Kind: HitFeed, Feed: it.feed}
+			}
+		}
+		return Hit{}
+	default:
+		cy := y - m.topbarH + s.ScrollY
+		for _, r := range s.rows {
+			if cy >= r.top && cy < r.top+m.rowH && x >= m.sidebarW+m.pad && x < s.W-m.pad {
+				return Hit{Kind: HitPost, Post: r.post}
+			}
+		}
+		return Hit{}
+	}
+}
+
+const appTitle = "go-reddit"
+
+// Draw paints the whole scene into buf (s.W*s.H*4 RGBA bytes).
 func (s *Scene) Draw(buf []byte) {
 	s.layout()
+	m := s.m
 	p := painter.NewPixelPainter(buf, s.W, s.H)
+	img := &image.RGBA{Pix: buf, Stride: s.W * 4, Rect: image.Rect(0, 0, s.W, s.H)}
 	th := s.theme
-
-	// Background.
-	p.FillRect(painter.Rect{X: 0, Y: 0, W: s.W, H: s.H}, th.Background)
-
-	// --- post list (drawn first; header/footer overpaint any overflow) ---
-	listTop := headerH
-	for _, r := range s.rows {
-		screenY := listTop + r.top - s.ScrollY
-		if screenY+rowH < headerH || screenY >= s.H-footerH {
-			continue // fully outside the viewport
-		}
-		s.drawPost(p, r.post, screenY)
-	}
-
-	// Empty / loading state.
-	if len(s.Posts) == 0 {
-		msg := "No posts loaded."
-		toolkit.DrawText(p, (s.W-toolkit.TextWidth(msg))/2, s.H/2, msg, th.OnBackground)
-	}
-
-	// --- header chrome ---
-	p.FillRect(painter.Rect{X: 0, Y: 0, W: s.W, H: headerH}, th.Accent)
 	onAccent := th.Background
 	if v, ok := th.Extra["OnAccent"]; ok {
 		onAccent = v
 	}
-	toolkit.DrawText(p, pad, (headerH-toolkit.GlyphHeight)/2, "go-reddit reader", onAccent)
-	feed := s.feedLabel()
-	toolkit.DrawText(p, s.W-pad-toolkit.TextWidth(feed), (headerH-toolkit.GlyphHeight)/2, feed, onAccent)
+	muteS := mute(th.OnSurface, th.Surface)
 
-	// --- footer status bar ---
-	fy := s.H - footerH
-	p.FillRect(painter.Rect{X: 0, Y: fy, W: s.W, H: footerH}, th.SurfaceAlt)
+	p.FillRect(painter.Rect{X: 0, Y: 0, W: s.W, H: s.H}, th.Background)
+
+	// --- feed (drawn first; chrome overpaints any scroll overflow) ---
+	feedTop := m.topbarH
+	for _, r := range s.rows {
+		screenY := feedTop + r.top - s.ScrollY
+		if screenY+m.rowH < feedTop || screenY >= s.H-m.footerH {
+			continue
+		}
+		s.drawPost(p, img, r.post, screenY)
+	}
+	if len(s.Posts) == 0 {
+		msg := "No posts loaded."
+		cx := m.sidebarW + (s.W-m.sidebarW-m.title.width(msg))/2
+		m.title.draw(img, cx, s.H/2, msg, th.OnBackground)
+	}
+
+	// --- sidebar ---
+	p.FillRect(painter.Rect{X: 0, Y: m.topbarH, W: m.sidebarW, H: s.H - m.topbarH - m.footerH}, th.SurfaceAlt)
+	m.side.draw(img, m.pad, m.topbarH+(m.sideItemH-m.side.height)/2, "FEEDS", muteS)
+	for _, it := range s.side {
+		label := "Front page"
+		if it.feed != "" {
+			label = "r/" + it.feed
+		}
+		selected := it.feed == s.Subreddit
+		col := th.OnSurface
+		if selected {
+			p.FillRect(painter.Rect{X: it.rect.X, Y: it.rect.Y, W: it.rect.W, H: it.rect.H}, th.Surface)
+			p.FillRect(painter.Rect{X: 0, Y: it.rect.Y, W: m.rpx(3), H: it.rect.H}, th.Accent)
+			col = th.Accent
+		}
+		m.side.draw(img, m.pad, it.rect.Y+(m.sideItemH-m.side.height)/2, label, col)
+	}
+	p.FillRect(painter.Rect{X: m.sidebarW - 1, Y: m.topbarH, W: 1, H: s.H - m.topbarH - m.footerH}, th.Border)
+
+	// --- topbar ---
+	p.FillRect(painter.Rect{X: 0, Y: 0, W: s.W, H: m.topbarH}, th.Accent)
+	m.header.draw(img, m.pad, (m.topbarH-m.header.height)/2, appTitle, onAccent)
+	for _, t := range s.tabs {
+		active := t.sort == s.Sort
+		col := mute(onAccent, th.Accent)
+		if active {
+			col = onAccent
+			p.FillRect(painter.Rect{X: t.rect.X, Y: m.topbarH - m.rpx(3), W: t.rect.W, H: m.rpx(3)}, onAccent)
+		}
+		m.tab.draw(img, t.rect.X+m.tabPad, (m.topbarH-m.tab.height)/2, t.sort, col)
+	}
+	m.header.drawRight(img, s.W-m.pad, (m.topbarH-m.header.height)/2, s.feedLabel(), onAccent)
+
+	// --- footer ---
+	fy := s.H - m.footerH
+	p.FillRect(painter.Rect{X: 0, Y: fy, W: s.W, H: m.footerH}, th.SurfaceAlt)
 	status := s.Status
 	if status == "" {
 		status = fmt.Sprintf("%d posts", len(s.Posts))
 	}
-	toolkit.DrawText(p, pad, fy+(footerH-toolkit.GlyphHeight)/2, status, th.OnSurface)
-	hint := "click to open · scroll · Cmd +/- zoom"
-	toolkit.DrawText(p, s.W-pad-toolkit.TextWidth(hint), fy+(footerH-toolkit.GlyphHeight)/2, hint, mute(th.OnSurface, th.SurfaceAlt))
+	m.meta.draw(img, m.pad, fy+(m.footerH-m.meta.height)/2, status, th.OnSurface)
+	m.meta.drawRight(img, s.W-m.pad, fy+(m.footerH-m.meta.height)/2, "click a feed · scroll · Cmd +/- zoom", muteS)
 }
 
 // drawPost renders one post card at screen y.
-func (s *Scene) drawPost(p *painter.PixelPainter, post reddit.Post, y int) {
+func (s *Scene) drawPost(p *painter.PixelPainter, img *image.RGBA, post reddit.Post, y int) {
+	m := s.m
 	th := s.theme
-	card := painter.Rect{X: pad, Y: y, W: s.W - 2*pad, H: rowH}
-	p.FillRect(card, th.Surface)
-	p.StrokeRect(card, th.Border, 1)
+	rad := m.rpx(6)
+	card := painter.Rect{X: m.sidebarW + m.pad, Y: y, W: s.W - m.sidebarW - 2*m.pad, H: m.rowH}
+	p.FillRoundRect(card, rad, th.Surface)
+	p.StrokeRoundRect(card, rad, th.Border, 1)
 
 	// Score badge (left column).
 	scoreStr := formatScore(post.Score)
-	sx := card.X + (scoreW-toolkit.TextWidth(scoreStr))/2
-	toolkit.DrawText(p, sx, y+14, scoreStr, th.Accent)
-	pts := "pts"
-	toolkit.DrawText(p, card.X+(scoreW-toolkit.TextWidth(pts))/2, y+26, pts, mute(th.OnSurface, th.Surface))
+	m.score.draw(img, card.X+(m.scoreW-m.score.width(scoreStr))/2, y+m.pad, scoreStr, th.Accent)
+	m.meta.draw(img, card.X+(m.scoreW-m.meta.width("pts"))/2, y+m.pad+m.score.height, "pts", mute(th.OnSurface, th.Surface))
 
 	// Title (up to two wrapped lines).
-	tx := card.X + scoreW
-	availW := card.W - scoreW - pad
-	lines := wrapText(post.Title, availW/toolkit.GlyphAdvance, 2)
-	for i, ln := range lines {
-		toolkit.DrawText(p, tx, y+10+i*lineH, ln, th.OnSurface)
+	tx := card.X + m.scoreW
+	availW := card.W - m.scoreW - m.pad
+	for i, ln := range wrapText(m.title, post.Title, availW, 2) {
+		m.title.draw(img, tx, y+m.pad+i*m.title.height, ln, th.OnSurface)
 	}
 
-	// Meta line.
-	meta := metaLine(post)
-	toolkit.DrawText(p, tx, y+rowH-16, meta, mute(th.OnSurface, th.Surface))
+	// Meta line, with optional flair on the right.
+	metaY := y + m.rowH - m.pad - m.meta.height
+	m.meta.draw(img, tx, metaY, metaLine(post), mute(th.OnSurface, th.Surface))
 	if post.Flair != "" {
-		flair := "[" + post.Flair + "]"
-		toolkit.DrawText(p, card.X+card.W-pad-toolkit.TextWidth(flair), y+rowH-16, flair, th.Accent)
+		m.meta.drawRight(img, card.X+card.W-m.pad, metaY, "["+post.Flair+"]", th.Accent)
 	}
+}
+
+// --- metrics ---------------------------------------------------------------
+
+type metrics struct {
+	scale                                                    float64
+	pad, topbarH, sidebarW, footerH, rowH, rowGap, scoreW    int
+	sideItemH, tabPad                                        int
+	title, meta, score, header, side, tab                    textFace
+}
+
+// rpx scales a base pixel value by the metric scale (min 1).
+func (m metrics) rpx(base float64) int { return scalePx(base, m.scale) }
+
+func scalePx(base, scale float64) int {
+	n := int(base*scale + 0.5)
+	if n < 1 {
+		n = 1
+	}
+	return n
+}
+
+func computeMetrics(scale float64) metrics {
+	m := metrics{scale: scale}
+	m.pad = scalePx(10, scale)
+	m.title = getFace(scalePx(14, scale), false)
+	m.meta = getFace(scalePx(11, scale), false)
+	m.score = getFace(scalePx(14, scale), true)
+	m.header = getFace(scalePx(15, scale), true)
+	m.side = getFace(scalePx(13, scale), false)
+	m.tab = getFace(scalePx(13, scale), true)
+	m.scoreW = scalePx(56, scale)
+	m.sidebarW = scalePx(170, scale)
+	m.rowGap = scalePx(8, scale)
+	m.tabPad = scalePx(10, scale)
+	m.sideItemH = m.side.height + scalePx(10, scale)
+	m.topbarH = m.header.height + 2*m.pad
+	m.footerH = m.meta.height + m.pad
+	m.rowH = 2*m.pad + 2*m.title.height + scalePx(4, scale) + m.meta.height
+	return m
+}
+
+// --- helpers ---------------------------------------------------------------
+
+// ClampZoom constrains z to [MinZoom, MaxZoom].
+func ClampZoom(z float64) float64 {
+	switch {
+	case z < MinZoom:
+		return MinZoom
+	case z > MaxZoom:
+		return MaxZoom
+	default:
+		return z
+	}
+}
+
+// StepZoom moves zoom one step (+1 in, -1 out, 0 none), snapped to the grid.
+func StepZoom(z float64, dir int) float64 {
+	switch {
+	case dir > 0:
+		z += ZoomStep
+	case dir < 0:
+		z -= ZoomStep
+	}
+	z = float64(int(z/ZoomStep+0.5)) * ZoomStep
+	return ClampZoom(z)
 }
 
 // metaLine builds the "u/author · N comments · domain" descriptor.
@@ -330,13 +439,11 @@ func formatScore(n int) string {
 	}
 }
 
-// wrapText greedily wraps text to at most maxLines lines of maxChars each.
-// Words longer than a line are hard-cut (never producing a mid-word space).
-// When content is dropped the final kept line ends in an ellipsis. The result
-// never contains more than maxLines lines.
-func wrapText(text string, maxChars, maxLines int) []string {
+// wrapText greedily wraps text to at most maxLines lines no wider than maxW
+// pixels in tf, hard-cutting over-long words and ellipsizing dropped content.
+func wrapText(tf textFace, text string, maxW, maxLines int) []string {
 	text = strings.TrimSpace(text)
-	if text == "" || maxChars < 1 || maxLines < 1 {
+	if text == "" || maxW < 1 || maxLines < 1 {
 		return nil
 	}
 	words := strings.Fields(text)
@@ -344,28 +451,24 @@ func wrapText(text string, maxChars, maxLines int) []string {
 	line := ""
 	for i := 0; i < len(words); {
 		w := words[i]
-		space := 0
+		cand := w
 		if line != "" {
-			space = 1
+			cand = line + " " + w
 		}
-		if len(line)+space+len(w) <= maxChars {
-			if line != "" {
-				line += " "
-			}
-			line += w
+		if tf.width(cand) <= maxW {
+			line = cand
 			i++
 			continue
 		}
 		if line == "" {
-			// A word wider than a whole line: take a full line's worth
-			// and leave the remainder to be processed next.
-			line = w[:maxChars]
-			words[i] = w[maxChars:]
+			cut := hardCut(tf, w, maxW)
+			line = cut
+			words[i] = w[len(cut):]
 		}
 		lines = append(lines, line)
 		line = ""
 		if len(lines) == maxLines {
-			return ellipsize(lines, maxChars)
+			return ellipsize(tf, lines, maxW)
 		}
 	}
 	if line != "" {
@@ -374,20 +477,38 @@ func wrapText(text string, maxChars, maxLines int) []string {
 	return lines
 }
 
-// ellipsize trims the final line to fit maxChars including a trailing "…",
-// signalling that content was dropped. lines must be non-empty.
-func ellipsize(lines []string, maxChars int) []string {
-	last := lines[len(lines)-1]
-	if len(last) > maxChars-1 {
-		last = last[:maxChars-1]
+// hardCut returns the largest rune-prefix of w that fits maxW (at least one).
+func hardCut(tf textFace, w string, maxW int) string {
+	r := []rune(w)
+	for n := len(r); n >= 1; n-- {
+		if tf.width(string(r[:n])) <= maxW {
+			return string(r[:n])
+		}
 	}
-	lines[len(lines)-1] = strings.TrimRight(last, " ") + "…"
+	return string(r[:1])
+}
+
+// ellipsize trims the final line so it plus "…" fits maxW.
+func ellipsize(tf textFace, lines []string, maxW int) []string {
+	r := []rune(lines[len(lines)-1])
+	for len(r) > 0 && tf.width(string(r)+"…") > maxW {
+		r = r[:len(r)-1]
+	}
+	lines[len(lines)-1] = string(r) + "…"
 	return lines
 }
 
-// mute blends fg 55% toward bg to produce a lower-contrast label colour for
-// secondary text, without needing a dedicated theme field.
+// mute blends fg 55% toward bg for secondary text.
 func mute(fg, bg toolkit.RGBA) toolkit.RGBA {
 	blend := func(a, b uint8) uint8 { return uint8((int(a)*45 + int(b)*55) / 100) }
 	return toolkit.RGBA{R: blend(fg.R, bg.R), G: blend(fg.G, bg.G), B: blend(fg.B, bg.B), A: 0xFF}
+}
+
+func contains(ss []string, v string) bool {
+	for _, s := range ss {
+		if s == v {
+			return true
+		}
+	}
+	return false
 }
