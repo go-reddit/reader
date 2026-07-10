@@ -3,12 +3,12 @@ package main
 import (
 	"io"
 	"net/http"
-	"net/http/cookiejar"
 	"net/url"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/go-reddit/reader/internal/browserhttp"
 	"github.com/go-reddit/reddit"
 )
 
@@ -63,11 +63,11 @@ func (o options) newClient() *reddit.Client {
 		opts = append(opts, reddit.WithOAuth(o.oauthID, o.oauthSecret))
 		return reddit.NewClient(opts...)
 	}
-	// Anonymous: emulate a browser session — a cookie jar warmed from the
-	// home page, so the ".json" reads carry the same anti-bot cookies a
-	// browser would, dodging the residential 403.
-	jar, _ := cookiejar.New(nil)
-	hc := &http.Client{Timeout: 30 * time.Second, Jar: jar}
+	// Anonymous: a portable browser-fingerprint (uTLS Chrome) client — pure
+	// Go, CGO=0, no host web view — plus a warmed cookie jar. This presents
+	// the same TLS ClientHello a real Chrome does, which is the main signal
+	// Reddit's anti-bot uses to 403 non-browser clients.
+	hc := browserhttp.NewClient(30 * time.Second)
 	opts = append(opts, reddit.WithHTTPClient(hc))
 	if warmupOnStartup {
 		go warmupCookies(hc, o.userAgent)

@@ -61,10 +61,11 @@ func main() {
 	// scheme (no socket at all). -http, -serve-only, -no-window and browser
 	// fallback all need a real loopback address, so they take the TCP path.
 	if !useHTTP && !serveOnly && !opts.noWindow {
-		// Live Reddit is fetched through a hidden reddit.com web view (a real
-		// browser, so no anti-bot 403). Demo mode keeps its built-in feed.
+		// Portable uTLS client first (works cross-platform, no host web view);
+		// the hidden reddit.com WKWebView engine is the macOS fallback if the
+		// uTLS fingerprint is still 403'd. Demo mode keeps its built-in feed.
 		if !demo {
-			srv.SetFetcher(webFetcher{})
+			srv.SetFetcher(chainFetcher{fetchers: []server.Fetcher{fetcher, webFetcher{}}})
 		}
 		cfg := webview.Config{
 			Title:        "Reddit — go-widgets",
