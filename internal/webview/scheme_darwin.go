@@ -17,12 +17,15 @@
 package webview
 
 import (
+	"bytes"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
 	"sync"
 	"unsafe"
 
+	"github.com/ebitengine/purego"
 	"github.com/ebitengine/purego/objc"
 )
 
@@ -31,6 +34,9 @@ var (
 	selURL                = objc.RegisterName("URL")
 	selAbsoluteString     = objc.RegisterName("absoluteString")
 	selHTTPMethod         = objc.RegisterName("HTTPMethod")
+	selHTTPBody           = objc.RegisterName("HTTPBody")
+	selDataLength         = objc.RegisterName("length")
+	selDataGetBytes       = objc.RegisterName("getBytes:length:")
 	selLengthOfBytes      = objc.RegisterName("lengthOfBytesUsingEncoding:")
 	selGetCString         = objc.RegisterName("getCString:maxLength:encoding:")
 	selDataWithBytesLen   = objc.RegisterName("dataWithBytes:length:")
@@ -87,9 +93,20 @@ func newSchemeHandler(h http.Handler) (objc.ID, error) {
 	return inst, nil
 }
 
-// startURLSchemeTask is the IMP for -webView:startURLSchemeTask:. It maps the
-// custom-scheme request onto the Go handler and streams the recorded response
-// back to WebKit.
+// goRun runs the request handler off the calling thread; dispatchMain runs the
+// response back on the main thread. Both are package vars so the mock-task test
+// can make them synchronous. In production the handler must NOT run on the
+// thread WebKit called us on (a blocking Reddit fetch would freeze the UI and
+// WebKit would tear the task down mid-flight), and the WKURLSchemeTask methods
+// MUST be messaged on the main thread.
+var (
+	goRun       = func(fn func()) { go fn() }
+	dispatchMain = defaultDispatchMain
+)
+
+// startURLSchemeTask is the IMP for -webView:startURLSchemeTask:. It reads the
+// request on the calling (main) thread, serves it on a background goroutine so
+// a slow upstream never blocks the UI, then replies on the main thread.
 func startURLSchemeTask(self objc.ID, _ objc.SEL, _ objc.ID, task objc.ID) {
 	handlerMu.RLock()
 	h := handlerByObj[uintptr(self)]
@@ -98,6 +115,7 @@ func startURLSchemeTask(self objc.ID, _ objc.SEL, _ objc.ID, task objc.ID) {
 		return
 	}
 
+	// Read everything WebKit-side up front (must be on this thread).
 	req := task.Send(selRequest)
 	nsurl := req.Send(selURL)
 	rawURL := goString(nsurl.Send(selAbsoluteString))
@@ -105,23 +123,90 @@ func startURLSchemeTask(self objc.ID, _ objc.SEL, _ objc.ID, task objc.ID) {
 	if method == "" {
 		method = http.MethodGet
 	}
-
-	// reader://app/api/feed?x=y  ->  /api/feed?x=y  (path+query as seen by
-	// the http.Handler). net/url keeps the query on RequestURI.
+	body := nsDataBytes(req.Send(selHTTPBody))
 	target := schemePathAndQuery(rawURL)
 
+	goRun(func() {
+		code, ct, data := serveSchemeRequest(h, method, target, body)
+		dispatchMain(func() {
+			if taskCancelled(task) {
+				clearTask(task)
+				return
+			}
+			respondToTask(task, nsurl, code, ct, data)
+			clearTask(task)
+		})
+	})
+}
+
+// serveSchemeRequest runs the http.Handler against the mapped request and
+// returns the recorded status, content type and body. Pure — no Objective-C —
+// so it is unit-testable without WebKit.
+func serveSchemeRequest(h http.Handler, method, target string, body []byte) (int, string, []byte) {
 	rec := httptest.NewRecorder()
-	hr, err := http.NewRequest(method, "http://app"+target, nil)
+	hr, err := http.NewRequest(method, "http://app"+target, bytes.NewReader(body))
 	if err != nil {
-		return
+		return http.StatusBadRequest, "text/plain", []byte(err.Error())
 	}
 	h.ServeHTTP(rec, hr)
+	return rec.Code, rec.Header().Get("Content-Type"), rec.Body.Bytes()
+}
 
-	if taskCancelled(task) {
+// nsDataBytes copies an NSData's bytes into a Go slice using -getBytes:length:
+// (a live Go pointer, so no uintptr→Pointer deref). Returns nil for an empty
+// or nil NSData.
+func nsDataBytes(d objc.ID) []byte {
+	if d == 0 {
+		return nil
+	}
+	n := int(d.Send(selDataLength))
+	if n <= 0 {
+		return nil
+	}
+	out := make([]byte, n)
+	d.Send(selDataGetBytes, unsafe.Pointer(&out[0]), n)
+	return out
+}
+
+// clearTask forgets a task's cancellation bookkeeping.
+func clearTask(task objc.ID) {
+	handlerMu.Lock()
+	delete(cancelledTasks, uintptr(task))
+	handlerMu.Unlock()
+}
+
+// libdispatch binding, used to hop the response back to the main thread.
+var (
+	dispatchOnce    sync.Once
+	dispatchAsyncFn func(queue, block uintptr)
+	mainQueue       uintptr
+	dispatchErr     error
+)
+
+func loadDispatch() {
+	h, err := purego.Dlopen("/usr/lib/libSystem.B.dylib", purego.RTLD_LAZY|purego.RTLD_GLOBAL)
+	if err != nil {
+		dispatchErr = err
 		return
 	}
-	body := rec.Body.Bytes()
-	respondToTask(task, nsurl, rec.Code, rec.Header().Get("Content-Type"), body)
+	purego.RegisterLibFunc(&dispatchAsyncFn, h, "dispatch_async")
+	p, err := purego.Dlsym(h, "_dispatch_main_q") // dispatch_get_main_queue() == &_dispatch_main_q
+	if err != nil || p == 0 {
+		dispatchErr = fmt.Errorf("webview: _dispatch_main_q unavailable: %v", err)
+		return
+	}
+	mainQueue = p
+}
+
+// defaultDispatchMain schedules fn on the main dispatch queue.
+func defaultDispatchMain(fn func()) {
+	dispatchOnce.Do(loadDispatch)
+	if dispatchErr != nil || mainQueue == 0 {
+		fn() // best-effort fallback
+		return
+	}
+	block := objc.NewBlock(func(objc.Block) { fn() })
+	dispatchAsyncFn(mainQueue, uintptr(block))
 }
 
 // stopURLSchemeTask is the IMP for -webView:stopURLSchemeTask:. WebKit calls

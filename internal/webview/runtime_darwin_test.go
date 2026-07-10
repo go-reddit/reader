@@ -1,6 +1,7 @@
 package webview
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -167,10 +168,21 @@ func newMockTask(t *testing.T, rawURL string) objc.ID {
 	return objc.ID(mockClass).Send(selAlloc).Send(selInit)
 }
 
+// syncScheme makes the scheme handler run synchronously so tests can assert on
+// the response without a run loop pumping the main dispatch queue.
+func syncScheme(t *testing.T) {
+	t.Helper()
+	og, od := goRun, dispatchMain
+	goRun = func(fn func()) { fn() }
+	dispatchMain = func(fn func()) { fn() }
+	t.Cleanup(func() { goRun, dispatchMain = og, od })
+}
+
 func TestStartURLSchemeTaskFullPath(t *testing.T) {
 	if err := loadFrameworks(); err != nil {
 		t.Fatal(err)
 	}
+	syncScheme(t)
 	body := []byte(`[{"id":"x","title":"hi"}]`)
 	var sawPath string
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -228,6 +240,7 @@ func TestStartURLSchemeTaskCancelledSkipsResponse(t *testing.T) {
 	if err := loadFrameworks(); err != nil {
 		t.Fatal(err)
 	}
+	syncScheme(t)
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("x")) })
 	inst, _ := newSchemeHandler(h)
 	task := newMockTask(t, "reader://app/")
@@ -259,5 +272,31 @@ func TestSchemeHandlerServesThroughGoHandler(t *testing.T) {
 	}
 	if rec.Body.String() != `{"ok":true}` {
 		t.Errorf("body = %q", rec.Body.String())
+	}
+}
+
+func TestServeSchemeRequestDeliversBody(t *testing.T) {
+	var gotBody, gotMethod, gotURI string
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		gotBody, gotMethod, gotURI = string(b), r.Method, r.URL.RequestURI()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(201)
+		w.Write([]byte(`{"ok":true}`))
+	})
+	code, ct, data := serveSchemeRequest(h, "PUT", "/api/settings?x=1", []byte(`{"sort":"top"}`))
+	if code != 201 || ct != "application/json" || string(data) != `{"ok":true}` {
+		t.Fatalf("response = %d %q %q", code, ct, data)
+	}
+	if gotMethod != "PUT" || gotBody != `{"sort":"top"}` || gotURI != "/api/settings?x=1" {
+		t.Errorf("handler saw method=%q body=%q uri=%q", gotMethod, gotBody, gotURI)
+	}
+}
+
+func TestServeSchemeRequestBadMethod(t *testing.T) {
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
+	code, _, _ := serveSchemeRequest(h, "BAD METHOD", "/x", nil)
+	if code != http.StatusBadRequest {
+		t.Errorf("bad method => %d", code)
 	}
 }
