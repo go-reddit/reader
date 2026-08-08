@@ -26,7 +26,8 @@ import (
 	"unsafe"
 
 	"github.com/ebitengine/purego"
-	"github.com/ebitengine/purego/objc"
+	pobjc "github.com/ebitengine/purego/objc"
+	objc "github.com/go-macos/objc"
 )
 
 var (
@@ -37,8 +38,6 @@ var (
 	selHTTPBody           = objc.RegisterName("HTTPBody")
 	selDataLength         = objc.RegisterName("length")
 	selDataGetBytes       = objc.RegisterName("getBytes:length:")
-	selLengthOfBytes      = objc.RegisterName("lengthOfBytesUsingEncoding:")
-	selGetCString         = objc.RegisterName("getCString:maxLength:encoding:")
 	selDataWithBytesLen   = objc.RegisterName("dataWithBytes:length:")
 	selDictWithObjForKey  = objc.RegisterName("dictionaryWithObject:forKey:")
 	selInitHTTPResponse   = objc.RegisterName("initWithURL:statusCode:HTTPVersion:headerFields:")
@@ -61,15 +60,17 @@ var (
 )
 
 // registerSchemeClass defines the Objective-C class implementing
-// WKURLSchemeHandler exactly once.
+// WKURLSchemeHandler exactly once. The class must FORMALLY conform to the
+// WKURLSchemeHandler protocol (not merely implement its methods):
+// -[WKWebViewConfiguration setURLSchemeHandler:forURLScheme:] validates
+// conformsToProtocol:, so the protocol is declared via
+// RegisterClassWithProtocols.
 func registerSchemeClass() (objc.Class, error) {
 	schemeClassOnce.Do(func() {
-		proto := objc.GetProtocol("WKURLSchemeHandler")
-		schemeClass, schemeClassErr = objc.RegisterClass(
+		schemeClass, schemeClassErr = objc.RegisterClassWithProtocols(
 			"GoRedditSchemeHandler",
 			objc.GetClass("NSObject"),
-			[]*objc.Protocol{proto},
-			nil,
+			[]*objc.Protocol{objc.GetProtocol("WKURLSchemeHandler")},
 			[]objc.MethodDef{
 				{Cmd: objc.RegisterName("webView:startURLSchemeTask:"), Fn: startURLSchemeTask},
 				{Cmd: objc.RegisterName("webView:stopURLSchemeTask:"), Fn: stopURLSchemeTask},
@@ -100,7 +101,7 @@ func newSchemeHandler(h http.Handler) (objc.ID, error) {
 // WebKit would tear the task down mid-flight), and the WKURLSchemeTask methods
 // MUST be messaged on the main thread.
 var (
-	goRun       = func(fn func()) { go fn() }
+	goRun        = func(fn func()) { go fn() }
 	dispatchMain = defaultDispatchMain
 )
 
@@ -205,7 +206,7 @@ func defaultDispatchMain(fn func()) {
 		fn() // best-effort fallback
 		return
 	}
-	block := objc.NewBlock(func(objc.Block) { fn() })
+	block := pobjc.NewBlock(func(pobjc.Block) { fn() })
 	dispatchAsyncFn(mainQueue, uintptr(block))
 }
 
@@ -255,26 +256,7 @@ func nsData(b []byte) objc.ID {
 	return d
 }
 
-// nsUTF8Encoding is NSUTF8StringEncoding.
-const nsUTF8Encoding = 4
-
-// goString reads a Go string from an NSString by copying its UTF-8 bytes into
-// a Go-owned buffer with -getCString:maxLength:encoding:. Filling a Go slice
-// (rather than dereferencing the -UTF8String raw pointer) keeps the code free
-// of any uintptr→Pointer address arithmetic — the buffer pointer handed to
-// ObjC is a live Go pointer the collector tracks.
+// goString reads a Go string from an NSString via the shared objc bridge.
 func goString(nsstr objc.ID) string {
-	if nsstr == 0 {
-		return ""
-	}
-	n := int(nsstr.Send(selLengthOfBytes, nsUTF8Encoding))
-	if n <= 0 {
-		return ""
-	}
-	buf := make([]byte, n+1) // +1 for the NUL getCString writes
-	ok := nsstr.Send(selGetCString, unsafe.Pointer(&buf[0]), len(buf), nsUTF8Encoding)
-	if ok == 0 {
-		return ""
-	}
-	return string(buf[:n])
+	return objc.GoString(nsstr)
 }
