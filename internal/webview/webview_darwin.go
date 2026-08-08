@@ -13,11 +13,9 @@
 package webview
 
 import (
-	"fmt"
 	"net/http"
 
-	"github.com/ebitengine/purego"
-	"github.com/ebitengine/purego/objc"
+	objc "github.com/go-macos/objc"
 )
 
 // selectors and classes are resolved once at first use.
@@ -58,8 +56,8 @@ const (
 )
 
 const (
-	backingStoreBuffered  = 2
-	activationPolicyReg   = 0 // NSApplicationActivationPolicyRegular
+	backingStoreBuffered = 2
+	activationPolicyReg  = 0 // NSApplicationActivationPolicyRegular
 )
 
 // cgRect mirrors CoreGraphics CGRect (two CGFloat points + two CGFloat sizes).
@@ -101,14 +99,8 @@ func loadFrameworks() error {
 	if frameworksLoaded {
 		return nil
 	}
-	for _, p := range []string{
-		"/System/Library/Frameworks/Foundation.framework/Foundation",
-		"/System/Library/Frameworks/AppKit.framework/AppKit",
-		"/System/Library/Frameworks/WebKit.framework/WebKit",
-	} {
-		if _, err := purego.Dlopen(p, purego.RTLD_GLOBAL|purego.RTLD_NOW); err != nil {
-			return fmt.Errorf("webview: dlopen %s: %w", p, err)
-		}
+	if err := objc.Load(objc.Foundation, objc.AppKit, objc.WebKit); err != nil {
+		return err
 	}
 	frameworksLoaded = true
 	return nil
@@ -116,7 +108,7 @@ func loadFrameworks() error {
 
 // nsString builds an NSString from a Go string.
 func nsString(s string) objc.ID {
-	return objc.ID(objc.GetClass("NSString")).Send(selStringWithUTF8String, s)
+	return objc.NSString(s)
 }
 
 // Run opens the window and enters the Cocoa run loop. It blocks until the

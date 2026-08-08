@@ -10,20 +10,20 @@ package webview
 import (
 	"sync"
 
-	"github.com/ebitengine/purego/objc"
+	objc "github.com/go-macos/objc"
 )
 
 var (
-	selSystemStatusBar   = objc.RegisterName("systemStatusBar")
-	selStatusItemLength  = objc.RegisterName("statusItemWithLength:")
-	selButton            = objc.RegisterName("button")
-	selInitMenuItem      = objc.RegisterName("initWithTitle:action:keyEquivalent:")
-	selSetTargetSel      = objc.RegisterName("setTarget:")
-	selAddItem           = objc.RegisterName("addItem:")
-	selSeparatorItem     = objc.RegisterName("separatorItem")
-	selSetMenu           = objc.RegisterName("setMenu:")
-	selTerminate         = objc.RegisterName("terminate:")
-	selReload            = objc.RegisterName("reload")
+	selSystemStatusBar  = objc.RegisterName("systemStatusBar")
+	selStatusItemLength = objc.RegisterName("statusItemWithLength:")
+	selButton           = objc.RegisterName("button")
+	selInitMenuItem     = objc.RegisterName("initWithTitle:action:keyEquivalent:")
+	selSetTargetSel     = objc.RegisterName("setTarget:")
+	selAddItem          = objc.RegisterName("addItem:")
+	selSeparatorItem    = objc.RegisterName("separatorItem")
+	selSetMenu          = objc.RegisterName("setMenu:")
+	selTerminate        = objc.RegisterName("terminate:")
+	selReload           = objc.RegisterName("reload")
 )
 
 // NSVariableStatusItemLength.
@@ -43,7 +43,7 @@ var (
 
 func registerMenuClass() {
 	menuOnce.Do(func() {
-		menuClass, _ = objc.RegisterClass("GoRedditMenu", objc.GetClass("NSObject"), nil, nil,
+		menuClass, _ = objc.RegisterClass("GoRedditMenu", objc.GetClass("NSObject"),
 			[]objc.MethodDef{
 				{Cmd: objc.RegisterName("onOpen:"), Fn: menuOnOpen},
 				{Cmd: objc.RegisterName("onLogin:"), Fn: menuOnLoginAction},

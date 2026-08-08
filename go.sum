@@ -1,7 +1,9 @@
 github.com/andybalholm/brotli v1.0.6 h1:Yf9fFpf49Zrxb9NlQaluyE92/+X7UVHlhMNJN2sxfOI=
 github.com/andybalholm/brotli v1.0.6/go.mod h1:fO7iG3H7G2nSZ7m0zPUDn85XEX2GTukHGRSepvi9Eig=
-github.com/ebitengine/purego v0.10.1 h1:dewVBCBT2GaMu1SrNTYxQhgQBethzfhiwvZiLGP/qyY=
-github.com/ebitengine/purego v0.10.1/go.mod h1:iIjxzd6CiRiOG0UyXP+V1+jWqUXVjPKLAI0mRfJZTmQ=
+github.com/ebitengine/purego v0.10.2 h1:W809HbnvzAxgdm+aOvlSekrM16wGCdT/e76+9tS7gzE=
+github.com/ebitengine/purego v0.10.2/go.mod h1:iIjxzd6CiRiOG0UyXP+V1+jWqUXVjPKLAI0mRfJZTmQ=
+github.com/go-macos/objc v0.1.0 h1:X9jacwcRAeuvA7v8j2FEI/1wmJPxW+5VXjJfq0rzHZE=
+github.com/go-macos/objc v0.1.0/go.mod h1:00GJyieLzPcb65rPLVWNPPUCVm79nmmiEXUDsslRpOs=
 github.com/go-reddit/reddit v0.1.0 h1:/b6+4BKEBSnSIVAuWEYaLU4d01tjfcsu+LQea3OFSw4=
 github.com/go-reddit/reddit v0.1.0/go.mod h1:/zGZliQ8lN+iGyVAiGzeGGkY+rQBZNlF4JwAnRaYEGI=
 github.com/go-widgets/painter v0.1.2 h1:KV3Yet2l4Yg2c5GHNYikimrUq00Bk0JK8eew7y/dkQQ=
