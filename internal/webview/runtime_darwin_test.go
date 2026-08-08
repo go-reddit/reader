@@ -72,6 +72,30 @@ func TestRegisterSchemeClassOnce(t *testing.T) {
 	}
 }
 
+// TestSchemeClassConformsToWKURLSchemeHandler guards the objc-library
+// migration: -[WKWebViewConfiguration setURLSchemeHandler:forURLScheme:]
+// validates conformsToProtocol:(WKURLSchemeHandler), so the scheme-handler
+// class must FORMALLY declare the protocol (via RegisterClassWithProtocols),
+// not merely implement its two methods. Without the declaration WKWebView
+// rejects the handler at runtime and the socketless transport silently breaks —
+// a failure the headless CI cannot otherwise catch.
+func TestSchemeClassConformsToWKURLSchemeHandler(t *testing.T) {
+	if err := loadFrameworks(); err != nil {
+		t.Fatal(err)
+	}
+	inst, err := newSchemeHandler(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	if err != nil {
+		t.Fatalf("newSchemeHandler: %v", err)
+	}
+	proto := objc.GetProtocol("WKURLSchemeHandler")
+	if proto == nil {
+		t.Fatal("WKURLSchemeHandler protocol not found (WebKit not loaded?)")
+	}
+	if inst.Send(objc.RegisterName("conformsToProtocol:"), proto) == 0 {
+		t.Fatal("scheme handler does NOT conform to WKURLSchemeHandler; WKWebView setURLSchemeHandler: would reject it")
+	}
+}
+
 func TestNewSchemeHandlerBindsHandler(t *testing.T) {
 	if err := loadFrameworks(); err != nil {
 		t.Fatal(err)

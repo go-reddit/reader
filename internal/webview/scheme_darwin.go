@@ -60,12 +60,17 @@ var (
 )
 
 // registerSchemeClass defines the Objective-C class implementing
-// WKURLSchemeHandler exactly once.
+// WKURLSchemeHandler exactly once. The class must FORMALLY conform to the
+// WKURLSchemeHandler protocol (not merely implement its methods):
+// -[WKWebViewConfiguration setURLSchemeHandler:forURLScheme:] validates
+// conformsToProtocol:, so the protocol is declared via
+// RegisterClassWithProtocols.
 func registerSchemeClass() (objc.Class, error) {
 	schemeClassOnce.Do(func() {
-		schemeClass, schemeClassErr = objc.RegisterClass(
+		schemeClass, schemeClassErr = objc.RegisterClassWithProtocols(
 			"GoRedditSchemeHandler",
 			objc.GetClass("NSObject"),
+			[]*objc.Protocol{objc.GetProtocol("WKURLSchemeHandler")},
 			[]objc.MethodDef{
 				{Cmd: objc.RegisterName("webView:startURLSchemeTask:"), Fn: startURLSchemeTask},
 				{Cmd: objc.RegisterName("webView:stopURLSchemeTask:"), Fn: stopURLSchemeTask},
