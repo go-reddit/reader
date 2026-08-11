@@ -227,46 +227,52 @@ func (s *Scene) drawSettings(buf []byte) {
 
 	p.FillRect(painter.Rect{X: 0, Y: 0, W: s.W, H: s.H}, th.Background)
 
-	// Section labels (positioned to match layoutSettings' y flow).
+	// Every body element is a stock go-widgets widget carrying the reader's
+	// shaped fallback font — no hand-drawn pills / fields. Section captions are
+	// toolkit.Label (muted ink), positioned to match layoutSettings' y flow.
+	labelFont := ttFont(false, m.side.px)
+	drawLabel := func(x, y int, text string) {
+		w := toolkit.NewLabel(text)
+		w.Font, w.Ink = labelFont, muteS
+		w.SetBounds(toolkit.Rect{X: x, Y: y, W: s.W - x, H: m.side.height})
+		w.Draw(p, th)
+	}
 	labelY := m.topbarH + m.pad
-	m.side.draw(img, m.pad, labelY, "APPEARANCE", muteS)
+	drawLabel(m.pad, labelY, "APPEARANCE")
 	sortLabelY := labelY + m.side.height + m.rpx(6) + (m.tab.height + m.rpx(8)) + m.pad
-	m.side.draw(img, m.pad, sortLabelY, "DEFAULT SORT", muteS)
+	drawLabel(m.pad, sortLabelY, "DEFAULT SORT")
 	profLabelY := sortLabelY + m.side.height + m.rpx(6) + (m.tab.height + m.rpx(8)) + m.pad*2
-	m.side.draw(img, m.pad, profLabelY, "PROFILES", muteS)
+	drawLabel(m.pad, profLabelY, "PROFILES")
 
-	// Buttons + chips.
+	// Pills are toolkit.Button (Selected = active choice, ButtonDanger =
+	// destructive); feed chips are toolkit.Chip with a Closable ✕ affordance.
+	pillFont := ttFont(true, m.tab.px)
 	for _, b := range s.sButtons {
-		fill := th.Surface
-		txt := th.OnSurface
-		if b.active {
-			fill, txt = th.Accent, onAccent
+		if b.kind == HitRemoveFeed {
+			w := toolkit.NewChip(strings.TrimSuffix(b.label, "  ×"))
+			w.Closable, w.Font = true, pillFont
+			w.SetBounds(b.rect)
+			w.Draw(p, th)
+			continue
 		}
-		p.FillRoundRect(painter.Rect{X: b.rect.X, Y: b.rect.Y, W: b.rect.W, H: b.rect.H}, m.rpx(6), fill)
-		border := th.Border
+		w := &toolkit.Button{Label: b.label, Selected: b.active}
+		w.Font = pillFont
 		if b.danger {
-			border, txt = rgb(0xD03030), rgb(0xD03030)
+			w.Style = toolkit.ButtonDanger
 		}
-		p.StrokeRoundRect(painter.Rect{X: b.rect.X, Y: b.rect.Y, W: b.rect.W, H: b.rect.H}, m.rpx(6), border, 1)
-		m.tab.draw(img, b.rect.X+m.rpx(10), b.rect.Y+(b.rect.H-m.tab.height)/2, b.label, txt)
+		w.SetBounds(b.rect)
+		w.Draw(p, th)
 	}
 
-	// Add-subreddit input field.
+	// Add-subreddit input field is a generic toolkit.Entry (placeholder from the
+	// toolkit's own Entry.Placeholder), focused since settings routes typed text
+	// straight into it, with the caret parked at the end.
 	if s.sInputR.W > 0 {
-		p.FillRoundRect(painter.Rect{X: s.sInputR.X, Y: s.sInputR.Y, W: s.sInputR.W, H: s.sInputR.H}, m.rpx(6), th.Surface)
-		p.StrokeRoundRect(painter.Rect{X: s.sInputR.X, Y: s.sInputR.Y, W: s.sInputR.W, H: s.sInputR.H}, m.rpx(6), th.Accent, 1)
-		txt := s.input
-		col := th.OnSurface
-		if txt == "" {
-			txt, col = "add subreddit…", muteS
-		}
-		tx := s.sInputR.X + m.rpx(8)
-		ty := s.sInputR.Y + (s.sInputR.H-m.tab.height)/2
-		m.tab.draw(img, tx, ty, txt, col)
-		if s.input != "" { // caret
-			cx := tx + m.tab.width(s.input) + m.rpx(1)
-			p.FillRect(painter.Rect{X: cx, Y: ty, W: m.rpx(2), H: m.tab.height}, th.OnSurface)
-		}
+		w := &toolkit.Entry{Text: s.input, Placeholder: "add subreddit…", Cursor: len([]rune(s.input))}
+		w.SetFocused(true)
+		w.Font = pillFont
+		w.SetBounds(s.sInputR)
+		w.Draw(p, th)
 	}
 
 	// Topbar: title + Done (drawn last so it overpaints any overflow).
