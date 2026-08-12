@@ -441,6 +441,11 @@ func (s *Scene) Draw(buf []byte) {
 		m.title.draw(img, cx, s.H/2, msg, th.OnBackground)
 	}
 
+	// Vertical scrollbar for the feed when it overflows its viewport. Drawn over
+	// the feed region (between the topbar and footer, right of the sidebar) so no
+	// later chrome overpaints it.
+	s.drawVScrollbar(p, toolkit.Rect{X: m.sidebarW, Y: feedTop, W: s.W - m.sidebarW, H: s.viewportH()}, s.contentH, s.ScrollY)
+
 	// --- sidebar ---
 	p.FillRect(painter.Rect{X: 0, Y: m.topbarH, W: m.sidebarW, H: s.H - m.topbarH - m.footerH}, th.SurfaceAlt)
 

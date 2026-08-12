@@ -371,14 +371,14 @@ func TestMute(t *testing.T) {
 
 func TestTextFaceHelpers(t *testing.T) {
 	tf := getFace(20, true)
-	if tf.width("") != 0 || tf.width("Wm") <= 0 || tf.height <= 0 || tf.ascent <= 0 {
+	if tf.width("") != 0 || tf.width("Wm") <= 0 || tf.height <= 0 || tf.px != 20 {
 		t.Errorf("face metrics: %+v", tf)
 	}
 	if getFace(20, true) != tf {
 		t.Error("face not cached")
 	}
-	if getFace(0, false).height <= 0 {
-		t.Error("zero px face")
+	if z := getFace(0, false); z.height <= 0 || z.px != 1 {
+		t.Errorf("zero px face clamps to 1: %+v", z)
 	}
 }
 

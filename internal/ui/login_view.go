@@ -2,7 +2,6 @@ package ui
 
 import (
 	"image"
-	"strings"
 
 	"github.com/go-widgets/painter"
 	"github.com/go-widgets/toolkit"
@@ -95,38 +94,35 @@ func (s *Scene) drawLogin(buf []byte) {
 	introY := m.topbarH + m.pad*2
 	m.side.draw(img, m.pad, introY, "Enter your Reddit app's client id + secret (reddit.com/prefs/apps).", muteS)
 
-	// Field labels + boxes.
+	// Field labels + boxes are stock go-widgets: toolkit.Label captions (muted)
+	// over toolkit.Entry fields (the secret one masked by the toolkit's own Mask),
+	// with the caret parked at the end since the reader drives the text itself.
+	labelFont := ttFont(false, m.side.px)
+	fieldFont := ttFont(true, m.tab.px)
 	drawField := func(label string, r toolkit.Rect, text string, secret, focused bool) {
-		m.side.draw(img, r.X, r.Y-m.side.height-m.rpx(2), label, muteS)
-		p.FillRoundRect(painter.Rect{X: r.X, Y: r.Y, W: r.W, H: r.H}, m.rpx(6), th.Surface)
-		border := th.Border
-		if focused {
-			border = th.Accent
-		}
-		p.StrokeRoundRect(painter.Rect{X: r.X, Y: r.Y, W: r.W, H: r.H}, m.rpx(6), border, 1)
-		shown := text
-		col := th.OnSurface
+		lbl := toolkit.NewLabel(label)
+		lbl.Font, lbl.Ink = labelFont, muteS
+		lbl.SetBounds(toolkit.Rect{X: r.X, Y: r.Y - m.side.height - m.rpx(2), W: r.W, H: m.side.height})
+		lbl.Draw(p, th)
+
+		e := &toolkit.Entry{Text: text, Placeholder: "…", Cursor: len([]rune(text))}
+		e.SetFocused(focused)
+		e.Font = fieldFont
 		if secret {
-			shown = strings.Repeat("•", len([]rune(text)))
+			e.Mask = '•' // the toolkit masks the display; Text keeps the real value
 		}
-		if shown == "" {
-			shown, col = "…", muteS
-		}
-		tx := r.X + m.rpx(8)
-		ty := r.Y + (r.H-m.tab.height)/2
-		m.tab.draw(img, tx, ty, shown, col)
-		if focused && text != "" {
-			cx := tx + m.tab.width(shown) + m.rpx(1)
-			p.FillRect(painter.Rect{X: cx, Y: ty, W: m.rpx(2), H: m.tab.height}, th.OnSurface)
-		}
+		e.SetBounds(r)
+		e.Draw(p, th)
 	}
 	drawField("CLIENT ID", s.loginIDR, s.loginID, false, s.loginFocus == 0)
 	drawField("CLIENT SECRET", s.loginSecretR, s.loginSecret, true, s.loginFocus == 1)
 
-	// Submit button.
+	// Submit button is a toolkit.Button (accent-primary style).
 	for _, b := range s.sButtons {
-		p.FillRoundRect(painter.Rect{X: b.rect.X, Y: b.rect.Y, W: b.rect.W, H: b.rect.H}, m.rpx(6), th.Accent)
-		m.tab.draw(img, b.rect.X+m.rpx(12), b.rect.Y+(b.rect.H-m.tab.height)/2, b.label, onAccent)
+		w := &toolkit.Button{Label: b.label, Style: toolkit.ButtonProminent}
+		w.Font = fieldFont
+		w.SetBounds(b.rect)
+		w.Draw(p, th)
 	}
 	if s.loginErr != "" {
 		errY := s.sButtons[len(s.sButtons)-1].rect.Y + s.sButtons[len(s.sButtons)-1].rect.H + m.pad
