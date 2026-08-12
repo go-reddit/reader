@@ -20,8 +20,8 @@ github.com/go-widgets/mvvm v0.5.0 h1:o5hh6HAxbApONcbZxmyV9q12pCAPGRd6L24aS3gaCbA
 github.com/go-widgets/mvvm v0.5.0/go.mod h1:Phdrd434RLxXW1D6dL1PPQH1tABwYLIN2X7jQVC4TbY=
 github.com/go-widgets/painter v0.9.0 h1:/y0qn0+TP3bhdLMi4+/vmUUBnSp3/L2RQBBgwAmJkes=
 github.com/go-widgets/painter v0.9.0/go.mod h1:ccmlkH2UmcXQh6rt9Fu2eDt2RI0B5V0POaGmUKeW0EQ=
-github.com/go-widgets/toolkit v0.152.0 h1:vaaxwK+EllQNDujinmT9VLLVQwE7HeoChFzHXBexNCI=
-github.com/go-widgets/toolkit v0.152.0/go.mod h1:UZ8tGcFgtmcIZuZPmX1fPncrni7IOG+E0AaeMi0MXcI=
+github.com/go-widgets/toolkit v0.153.0 h1:VEWM5SQBLoSgYn13cOwU+25rNcWt/J6vTnRMmZSfSN0=
+github.com/go-widgets/toolkit v0.153.0/go.mod h1:UZ8tGcFgtmcIZuZPmX1fPncrni7IOG+E0AaeMi0MXcI=
 github.com/klauspost/compress v1.17.4 h1:Ej5ixsIri7BrIjBkRZLTo6ghwrEtHFk7ijlczPW4fZ4=
 github.com/klauspost/compress v1.17.4/go.mod h1:/dCuZOvVtNoHsyb+cuJD3itjs3NbnF6KH9zAO4BDxPM=
 github.com/refraction-networking/utls v1.8.2 h1:j4Q1gJj0xngdeH+Ox/qND11aEfhpgoEvV+S9iJ2IdQo=

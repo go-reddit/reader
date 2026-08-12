@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/go-reddit/reader/internal/settings"
+	"github.com/go-widgets/toolkit"
 )
 
 func settingsScene() *Scene {
@@ -192,7 +193,7 @@ func TestDrawSettingsSmoke(t *testing.T) {
 
 	// A theme carrying Extra["OnAccent"] exercises that colour path.
 	s4 := settingsScene()
-	s4.SetTheme(adwaitaDark()) // constructed with Extra["OnAccent"]
+	s4.SetTheme(toolkit.AdwaitaDark()) // constructed with Extra["OnAccent"]
 	s4.Draw(make([]byte, s4.W*s4.H*4))
 }
 

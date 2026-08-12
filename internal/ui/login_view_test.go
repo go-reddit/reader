@@ -1,6 +1,10 @@
 package ui
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/go-widgets/toolkit"
+)
 
 func loginScene() *Scene {
 	s := NewScene()
@@ -95,7 +99,7 @@ func TestDrawLoginSmoke(t *testing.T) {
 	}
 	// Filled + focused secret (caret + mask) + an error line + Extra OnAccent.
 	s2 := loginScene()
-	s2.SetTheme(adwaitaDark())
+	s2.SetTheme(toolkit.AdwaitaDark())
 	s2.loginID = "id"
 	s2.loginSecret = "secret"
 	s2.loginFocus = 1
