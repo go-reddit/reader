@@ -8,7 +8,7 @@ require (
 	github.com/go-opentype/fonts v0.7.0
 	github.com/go-reddit/reddit v0.1.0
 	github.com/go-widgets/painter v0.9.0
-	github.com/go-widgets/toolkit v0.152.0
+	github.com/go-widgets/toolkit v0.153.0
 	github.com/refraction-networking/utls v1.8.2
 	golang.org/x/image v0.44.0
 )
