@@ -4,8 +4,10 @@ github.com/ebitengine/purego v0.10.2 h1:W809HbnvzAxgdm+aOvlSekrM16wGCdT/e76+9tS7
 github.com/ebitengine/purego v0.10.2/go.mod h1:iIjxzd6CiRiOG0UyXP+V1+jWqUXVjPKLAI0mRfJZTmQ=
 github.com/go-images/images v0.0.0-20260811115337-bc5d586f8e38 h1:p+DjIujiwUvBiyD0oS9SUatf3pMKo0GpcA4p/Kyv7d8=
 github.com/go-images/images v0.0.0-20260811115337-bc5d586f8e38/go.mod h1:nWwQCf77xG1GhaSD3rvlp7FNjjDhz47vrztyeBvIerk=
-github.com/go-macos/objc v0.1.1 h1:fcuSplZNWzpZjimxMN3HkDHW7XnHFaGaEDIwrTbhdxs=
-github.com/go-macos/objc v0.1.1/go.mod h1:00GJyieLzPcb65rPLVWNPPUCVm79nmmiEXUDsslRpOs=
+github.com/go-macos/keychain v0.1.0 h1:QkKT97eeJ5m/FloDcoi4UmxIvZIosIwinRjexs3icqI=
+github.com/go-macos/keychain v0.1.0/go.mod h1:sR+WtyxxCqldTpbPizjLa/pFd0RPme+VSa5C3Qa4NE8=
+github.com/go-macos/objc v0.2.0 h1:uDFsiCMQT66A3E7dFsVYrnVOk3BQxpkhfwZJCtYuWq8=
+github.com/go-macos/objc v0.2.0/go.mod h1:00GJyieLzPcb65rPLVWNPPUCVm79nmmiEXUDsslRpOs=
 github.com/go-opentype/bidi v0.2.1 h1:7xCGqywPYxmwSfPBgP1Ewrp2Iwg2S03NeKxGWTz2guo=
 github.com/go-opentype/bidi v0.2.1/go.mod h1:PaWZ9P93jwQaXsEvAoSxvJ3P70S9f8TuFGDstTvcfmM=
 github.com/go-opentype/fonts v0.7.0 h1:2PG7FEWcBHgFp+UFOKilP2qF9+D/12bPfL1T9+GsDf8=
