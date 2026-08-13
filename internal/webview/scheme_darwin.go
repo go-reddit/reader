@@ -18,15 +18,12 @@ package webview
 
 import (
 	"bytes"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
 	"sync"
 	"unsafe"
 
-	"github.com/ebitengine/purego"
-	pobjc "github.com/ebitengine/purego/objc"
 	objc "github.com/go-macos/objc"
 )
 
@@ -99,10 +96,12 @@ func newSchemeHandler(h http.Handler) (objc.ID, error) {
 // can make them synchronous. In production the handler must NOT run on the
 // thread WebKit called us on (a blocking Reddit fetch would freeze the UI and
 // WebKit would tear the task down mid-flight), and the WKURLSchemeTask methods
-// MUST be messaged on the main thread.
+// MUST be messaged on the main thread. The main-thread hop is the shared
+// github.com/go-macos/objc bridge's DispatchMain (libdispatch dispatch_async
+// onto the main queue), so this package no longer dlopen's libSystem itself.
 var (
 	goRun        = func(fn func()) { go fn() }
-	dispatchMain = defaultDispatchMain
+	dispatchMain = objc.DispatchMain
 )
 
 // startURLSchemeTask is the IMP for -webView:startURLSchemeTask:. It reads the
@@ -174,40 +173,6 @@ func clearTask(task objc.ID) {
 	handlerMu.Lock()
 	delete(cancelledTasks, uintptr(task))
 	handlerMu.Unlock()
-}
-
-// libdispatch binding, used to hop the response back to the main thread.
-var (
-	dispatchOnce    sync.Once
-	dispatchAsyncFn func(queue, block uintptr)
-	mainQueue       uintptr
-	dispatchErr     error
-)
-
-func loadDispatch() {
-	h, err := purego.Dlopen("/usr/lib/libSystem.B.dylib", purego.RTLD_LAZY|purego.RTLD_GLOBAL)
-	if err != nil {
-		dispatchErr = err
-		return
-	}
-	purego.RegisterLibFunc(&dispatchAsyncFn, h, "dispatch_async")
-	p, err := purego.Dlsym(h, "_dispatch_main_q") // dispatch_get_main_queue() == &_dispatch_main_q
-	if err != nil || p == 0 {
-		dispatchErr = fmt.Errorf("webview: _dispatch_main_q unavailable: %v", err)
-		return
-	}
-	mainQueue = p
-}
-
-// defaultDispatchMain schedules fn on the main dispatch queue.
-func defaultDispatchMain(fn func()) {
-	dispatchOnce.Do(loadDispatch)
-	if dispatchErr != nil || mainQueue == 0 {
-		fn() // best-effort fallback
-		return
-	}
-	block := pobjc.NewBlock(func(pobjc.Block) { fn() })
-	dispatchAsyncFn(mainQueue, uintptr(block))
 }
 
 // stopURLSchemeTask is the IMP for -webView:stopURLSchemeTask:. WebKit calls
