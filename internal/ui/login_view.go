@@ -88,7 +88,7 @@ func (s *Scene) drawLogin(buf []byte) {
 	}
 	muteS := mute(th.OnSurface, th.Surface)
 
-	p.FillRect(painter.Rect{X: 0, Y: 0, W: s.W, H: s.H}, th.Background)
+	fillBox(p, th, painter.Rect{X: 0, Y: 0, W: s.W, H: s.H}, th.Background)
 
 	// Intro.
 	introY := m.topbarH + m.pad*2
@@ -130,11 +130,11 @@ func (s *Scene) drawLogin(buf []byte) {
 	}
 
 	// Topbar + Cancel (drawn last).
-	p.FillRect(painter.Rect{X: 0, Y: 0, W: s.W, H: m.topbarH}, th.Accent)
+	fillBox(p, th, painter.Rect{X: 0, Y: 0, W: s.W, H: m.topbarH}, th.Accent)
 	m.header.draw(img, m.pad, (m.topbarH-m.header.height)/2, "Log in to Reddit", onAccent)
 	cw := m.tab.width("Cancel") + m.rpx(24)
 	cr := toolkit.Rect{X: s.W - m.pad - cw, Y: (m.topbarH - (m.tab.height + m.rpx(8))) / 2, W: cw, H: m.tab.height + m.rpx(8)}
-	p.FillRoundRect(cr, m.rpx(6), onAccent)
+	fillRoundBox(p, th, cr, m.rpx(6), onAccent)
 	m.tab.draw(img, cr.X+m.rpx(12), cr.Y+(cr.H-m.tab.height)/2, "Cancel", th.Accent)
 }
 

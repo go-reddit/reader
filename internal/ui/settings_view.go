@@ -225,7 +225,7 @@ func (s *Scene) drawSettings(buf []byte) {
 	}
 	muteS := mute(th.OnSurface, th.Surface)
 
-	p.FillRect(painter.Rect{X: 0, Y: 0, W: s.W, H: s.H}, th.Background)
+	fillBox(p, th, painter.Rect{X: 0, Y: 0, W: s.W, H: s.H}, th.Background)
 
 	// Every body element is a stock go-widgets widget carrying the reader's
 	// shaped fallback font — no hand-drawn pills / fields. Section captions are
@@ -276,12 +276,12 @@ func (s *Scene) drawSettings(buf []byte) {
 	}
 
 	// Topbar: title + Done (drawn last so it overpaints any overflow).
-	p.FillRect(painter.Rect{X: 0, Y: 0, W: s.W, H: m.topbarH}, th.Accent)
+	fillBox(p, th, painter.Rect{X: 0, Y: 0, W: s.W, H: m.topbarH}, th.Accent)
 	m.header.draw(img, m.pad, (m.topbarH-m.header.height)/2, "Settings", onAccent)
 	done := "Done"
 	dw := m.tab.width(done) + m.rpx(24)
 	dr := toolkit.Rect{X: s.W - m.pad - dw, Y: (m.topbarH - (m.tab.height + m.rpx(8))) / 2, W: dw, H: m.tab.height + m.rpx(8)}
-	p.FillRoundRect(dr, m.rpx(6), onAccent)
+	fillRoundBox(p, th, dr, m.rpx(6), onAccent)
 	m.tab.draw(img, dr.X+m.rpx(12), dr.Y+(dr.H-m.tab.height)/2, done, th.Accent)
 }
 
