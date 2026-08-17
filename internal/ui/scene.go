@@ -424,7 +424,7 @@ func (s *Scene) Draw(buf []byte) {
 	}
 	muteS := mute(th.OnSurface, th.Surface)
 
-	p.FillRect(painter.Rect{X: 0, Y: 0, W: s.W, H: s.H}, th.Background)
+	fillBox(p, th, painter.Rect{X: 0, Y: 0, W: s.W, H: s.H}, th.Background)
 
 	// --- feed (drawn first; chrome overpaints any scroll overflow) ---
 	feedTop := m.topbarH
@@ -447,14 +447,14 @@ func (s *Scene) Draw(buf []byte) {
 	s.drawVScrollbar(p, toolkit.Rect{X: m.sidebarW, Y: feedTop, W: s.W - m.sidebarW, H: s.viewportH()}, s.contentH, s.ScrollY)
 
 	// --- sidebar ---
-	p.FillRect(painter.Rect{X: 0, Y: m.topbarH, W: m.sidebarW, H: s.H - m.topbarH - m.footerH}, th.SurfaceAlt)
+	fillBox(p, th, painter.Rect{X: 0, Y: m.topbarH, W: m.sidebarW, H: s.H - m.topbarH - m.footerH}, th.SurfaceAlt)
 
 	// Profile tabs.
 	for _, t := range s.profTabs {
 		active := t.index == s.Active
 		col := th.OnSurface
 		if active {
-			p.FillRoundRect(painter.Rect{X: t.rect.X, Y: t.rect.Y + m.rpx(3), W: t.rect.W, H: t.rect.H - m.rpx(6)}, m.rpx(5), th.Accent)
+			fillRoundBox(p, th, painter.Rect{X: t.rect.X, Y: t.rect.Y + m.rpx(3), W: t.rect.W, H: t.rect.H - m.rpx(6)}, m.rpx(5), th.Accent)
 			col = onAccent
 		}
 		m.tab.draw(img, t.rect.X+m.tabPad, t.rect.Y+(m.profileTabH-m.tab.height)/2, s.Profiles[t.index].Name, col)
@@ -471,8 +471,8 @@ func (s *Scene) Draw(buf []byte) {
 		selected := it.feed == s.Subreddit
 		col := th.OnSurface
 		if selected {
-			p.FillRect(painter.Rect{X: it.rect.X, Y: it.rect.Y, W: it.rect.W, H: it.rect.H}, th.Surface)
-			p.FillRect(painter.Rect{X: 0, Y: it.rect.Y, W: m.rpx(3), H: it.rect.H}, th.Accent)
+			fillBox(p, th, painter.Rect{X: it.rect.X, Y: it.rect.Y, W: it.rect.W, H: it.rect.H}, th.Surface)
+			fillBox(p, th, painter.Rect{X: 0, Y: it.rect.Y, W: m.rpx(3), H: it.rect.H}, th.Accent)
 			col = th.Accent
 		}
 		m.side.draw(img, m.pad, it.rect.Y+(m.sideItemH-m.side.height)/2, label, col)
@@ -483,29 +483,29 @@ func (s *Scene) Draw(buf []byte) {
 	if s.LoggedIn {
 		account = "Log out"
 	}
-	p.FillRect(painter.Rect{X: 0, Y: s.accountR.Y - 1, W: m.sidebarW, H: 1}, th.Border)
+	fillBox(p, th, painter.Rect{X: 0, Y: s.accountR.Y - 1, W: m.sidebarW, H: 1}, th.Border)
 	m.side.draw(img, m.pad, s.accountR.Y+(m.sideItemH-m.side.height)/2, account, muteS)
 	m.side.draw(img, m.pad, s.settingsR.Y+(m.sideItemH-m.side.height)/2, "Settings", muteS)
-	p.FillRect(painter.Rect{X: m.sidebarW - 1, Y: m.topbarH, W: 1, H: s.H - m.topbarH - m.footerH}, th.Border)
+	fillBox(p, th, painter.Rect{X: m.sidebarW - 1, Y: m.topbarH, W: 1, H: s.H - m.topbarH - m.footerH}, th.Border)
 
 	// --- topbar ---
-	p.FillRect(painter.Rect{X: 0, Y: 0, W: s.W, H: m.topbarH}, th.Accent)
+	fillBox(p, th, painter.Rect{X: 0, Y: 0, W: s.W, H: m.topbarH}, th.Accent)
 	m.header.draw(img, m.pad, (m.topbarH-m.header.height)/2, appTitle, onAccent)
 	for _, t := range s.tabs {
 		active := t.sort == s.Sort
 		col := mute(onAccent, th.Accent)
 		if active {
 			col = onAccent
-			p.FillRect(painter.Rect{X: t.rect.X, Y: m.topbarH - m.rpx(3), W: t.rect.W, H: m.rpx(3)}, onAccent)
+			fillBox(p, th, painter.Rect{X: t.rect.X, Y: m.topbarH - m.rpx(3), W: t.rect.W, H: m.rpx(3)}, onAccent)
 		}
 		m.tab.draw(img, t.rect.X+m.tabPad, (m.topbarH-m.tab.height)/2, t.sort, col)
 	}
 
 	// Topbar filter field.
 	sr := s.searchR
-	p.FillRoundRect(painter.Rect{X: sr.X, Y: sr.Y, W: sr.W, H: sr.H}, m.rpx(6), th.Surface)
+	fillRoundBox(p, th, painter.Rect{X: sr.X, Y: sr.Y, W: sr.W, H: sr.H}, m.rpx(6), th.Surface)
 	if s.searchFocused {
-		p.StrokeRoundRect(painter.Rect{X: sr.X, Y: sr.Y, W: sr.W, H: sr.H}, m.rpx(6), onAccent, 2)
+		strokeRoundBox(p, th, painter.Rect{X: sr.X, Y: sr.Y, W: sr.W, H: sr.H}, m.rpx(6), onAccent, 2)
 	}
 	stext, scol := s.search, th.OnSurface
 	if stext == "" {
@@ -516,12 +516,12 @@ func (s *Scene) Draw(buf []byte) {
 	m.tab.draw(img, stx, sty, stext, scol)
 	if s.searchFocused && s.search != "" {
 		cx := stx + m.tab.width(s.search) + m.rpx(1)
-		p.FillRect(painter.Rect{X: cx, Y: sty, W: m.rpx(2), H: m.tab.height}, th.OnSurface)
+		fillBox(p, th, painter.Rect{X: cx, Y: sty, W: m.rpx(2), H: m.tab.height}, th.OnSurface)
 	}
 
 	// --- footer ---
 	fy := s.H - m.footerH
-	p.FillRect(painter.Rect{X: 0, Y: fy, W: s.W, H: m.footerH}, th.SurfaceAlt)
+	fillBox(p, th, painter.Rect{X: 0, Y: fy, W: s.W, H: m.footerH}, th.SurfaceAlt)
 	status := s.Status
 	if status == "" {
 		status = fmt.Sprintf("%d posts", len(s.Posts))
@@ -536,8 +536,8 @@ func (s *Scene) drawPost(p *painter.PixelPainter, img *image.RGBA, post reddit.P
 	th := s.theme
 	rad := m.rpx(6)
 	card := painter.Rect{X: m.sidebarW + m.pad, Y: y, W: s.W - m.sidebarW - 2*m.pad, H: m.rowH}
-	p.FillRoundRect(card, rad, th.Surface)
-	p.StrokeRoundRect(card, rad, th.Border, 1)
+	fillRoundBox(p, th, card, rad, th.Surface)
+	strokeRoundBox(p, th, card, rad, th.Border, 1)
 
 	scoreStr := formatScore(post.Score)
 	m.score.draw(img, card.X+(m.scoreW-m.score.width(scoreStr))/2, y+m.pad, scoreStr, th.Accent)
