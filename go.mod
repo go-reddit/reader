@@ -4,6 +4,7 @@ go 1.26.4
 
 require (
 	github.com/ebitengine/purego v0.10.2
+	github.com/go-iconoir/iconoir v0.2.0
 	github.com/go-keyring/keyring v0.2.0
 	github.com/go-macos/objc v0.2.0
 	github.com/go-opentype/fonts v0.8.0
@@ -26,7 +27,6 @@ require (
 	github.com/go-crdt/collab v0.18.0 // indirect
 	github.com/go-crdt/crdt v0.29.0 // indirect
 	github.com/go-gfx/gfx v0.6.0 // indirect
-	github.com/go-iconoir/iconoir v0.2.0 // indirect
 	github.com/go-images/images v0.0.0-20260815210351-4a50ef5ab734 // indirect
 	github.com/go-macos/keychain v0.1.0 // indirect
 	github.com/go-opentype/opentype v0.6.0 // indirect

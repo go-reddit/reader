@@ -1,8 +1,6 @@
 package ui
 
 import (
-	"image"
-
 	"github.com/go-widgets/painter"
 	"github.com/go-widgets/toolkit"
 )
@@ -80,7 +78,6 @@ func (s *Scene) drawLogin(buf []byte) {
 	s.loginLayout()
 	m := s.m
 	p := painter.NewPixelPainter(buf, s.W, s.H)
-	img := &image.RGBA{Pix: buf, Stride: s.W * 4, Rect: image.Rect(0, 0, s.W, s.H)}
 	th := s.theme
 	onAccent := th.Background
 	if v, ok := th.Extra["OnAccent"]; ok {
@@ -92,7 +89,7 @@ func (s *Scene) drawLogin(buf []byte) {
 
 	// Intro.
 	introY := m.topbarH + m.pad*2
-	m.side.draw(img, m.pad, introY, "Enter your Reddit app's client id + secret (reddit.com/prefs/apps).", muteS)
+	m.side.labelAt(p, th, m.pad, introY, "Enter your Reddit app's client id + secret (reddit.com/prefs/apps).", muteS)
 
 	// Field labels + boxes are stock go-widgets: toolkit.Label captions (muted)
 	// over toolkit.Entry fields (the secret one masked by the toolkit's own Mask),
@@ -128,16 +125,16 @@ func (s *Scene) drawLogin(buf []byte) {
 	}
 	if s.loginErr != "" {
 		errY := s.sButtons[len(s.sButtons)-1].rect.Y + s.sButtons[len(s.sButtons)-1].rect.H + m.pad
-		m.side.draw(img, m.pad, errY, s.loginErr, rgb(0xD03030))
+		m.side.labelAt(p, th, m.pad, errY, s.loginErr, rgb(0xD03030))
 	}
 
 	// Topbar + Cancel (drawn last).
 	fillBox(p, th, painter.Rect{X: 0, Y: 0, W: s.W, H: m.topbarH}, th.Accent)
-	m.header.draw(img, m.pad, (m.topbarH-m.header.height)/2, "Log in to Reddit", onAccent)
+	m.header.labelAt(p, th, m.pad, (m.topbarH-m.header.height)/2, "Log in to Reddit", onAccent)
 	cw := m.tab.width("Cancel") + m.rpx(24)
 	cr := toolkit.Rect{X: s.W - m.pad - cw, Y: (m.topbarH - (m.tab.height + m.rpx(8))) / 2, W: cw, H: m.tab.height + m.rpx(8)}
 	fillRoundBox(p, th, cr, m.rpx(6), onAccent)
-	m.tab.draw(img, cr.X+m.rpx(12), cr.Y+(cr.H-m.tab.height)/2, "Cancel", th.Accent)
+	m.tab.labelAt(p, th, cr.X+m.rpx(12), cr.Y+(cr.H-m.tab.height)/2, "Cancel", th.Accent)
 }
 
 // hitLogin maps a click in the login view to an action.

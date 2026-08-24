@@ -25,11 +25,3 @@ func fillRoundBox(p painter.Painter, th *toolkit.Theme, r toolkit.Rect, radius i
 	b.SetBounds(r)
 	b.Draw(p, th)
 }
-
-// strokeRoundBox outlines r (corners rounded by radius) in stroke at the given
-// width, with no fill — the widget form of p.StrokeRoundRect.
-func strokeRoundBox(p painter.Painter, th *toolkit.Theme, r toolkit.Rect, radius int, stroke toolkit.RGBA, width int) {
-	b := &toolkit.Backdrop{NoFill: true, Radius: radius, Stroke: stroke, StrokeWidth: width}
-	b.SetBounds(r)
-	b.Draw(p, th)
-}

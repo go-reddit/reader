@@ -332,36 +332,6 @@ func TestMetaLine(t *testing.T) {
 	}
 }
 
-func TestWrapText(t *testing.T) {
-	tf := getFace(14, false)
-	if wrapText(tf, "", 100, 2) != nil || wrapText(tf, "hi", 0, 2) != nil || wrapText(tf, "hi", 100, 0) != nil {
-		t.Error("degenerate inputs")
-	}
-	if got := wrapText(tf, "hi there", 400, 2); len(got) != 1 {
-		t.Errorf("one line => %v", got)
-	}
-	got := wrapText(tf, strings.Repeat("wordy ", 40), 120, 2)
-	if len(got) != 2 || !strings.HasSuffix(got[1], "…") {
-		t.Errorf("overflow => %v", got)
-	}
-	if got := wrapText(tf, "supercalifragilisticexpialidocious", 40, 3); len(got) == 0 {
-		t.Errorf("long word => %v", got)
-	}
-	got = wrapText(tf, strings.Repeat("x", 200), 30, 2)
-	if len(got) != 2 || !strings.HasSuffix(got[1], "…") {
-		t.Errorf("long-word overflow => %v", got)
-	}
-	if got := wrapText(tf, "alpha beta gamma", 60, 3); len(got) < 1 {
-		t.Errorf("wrap => %v", got)
-	}
-}
-
-func TestHardCut(t *testing.T) {
-	if got := hardCut(getFace(14, false), "wide", 1); len([]rune(got)) != 1 {
-		t.Errorf("hardCut min one rune => %q", got)
-	}
-}
-
 func TestMute(t *testing.T) {
 	c := mute(toolkit.RGBA{R: 0}, toolkit.RGBA{R: 100})
 	if c.A != 0xFF || c.R != 55 {

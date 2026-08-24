@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"image"
 	"strings"
 
 	"github.com/go-reddit/reader/internal/settings"
@@ -52,7 +51,7 @@ func (s *Scene) TypeRune(r rune) {
 	case s.Mode == ModeLogin:
 		s.loginTypeRune(r)
 	case s.Mode == ModeFeed && s.searchFocused:
-		s.search += string(r)
+		s.searchEntry.OnEvent(toolkit.Event{Kind: toolkit.EventChar, Code: string(r)})
 		s.ScrollY = 0
 	default:
 		s.input += string(r)
@@ -65,7 +64,7 @@ func (s *Scene) Backspace() {
 	case s.Mode == ModeLogin:
 		s.loginBackspace()
 	case s.Mode == ModeFeed && s.searchFocused:
-		s.search = trimLastRune(s.search)
+		s.searchEntry.OnEvent(toolkit.Event{Kind: toolkit.EventKeyDown, Code: "Backspace"})
 		s.ScrollY = 0
 	default:
 		s.input = trimLastRune(s.input)
@@ -217,7 +216,6 @@ func (s *Scene) drawSettings(buf []byte) {
 	s.layoutSettings()
 	m := s.m
 	p := painter.NewPixelPainter(buf, s.W, s.H)
-	img := &image.RGBA{Pix: buf, Stride: s.W * 4, Rect: image.Rect(0, 0, s.W, s.H)}
 	th := s.theme
 	onAccent := th.Background
 	if v, ok := th.Extra["OnAccent"]; ok {
@@ -279,12 +277,12 @@ func (s *Scene) drawSettings(buf []byte) {
 
 	// Topbar: title + Done (drawn last so it overpaints any overflow).
 	fillBox(p, th, painter.Rect{X: 0, Y: 0, W: s.W, H: m.topbarH}, th.Accent)
-	m.header.draw(img, m.pad, (m.topbarH-m.header.height)/2, "Settings", onAccent)
+	m.header.labelAt(p, th, m.pad, (m.topbarH-m.header.height)/2, "Settings", onAccent)
 	done := "Done"
 	dw := m.tab.width(done) + m.rpx(24)
 	dr := toolkit.Rect{X: s.W - m.pad - dw, Y: (m.topbarH - (m.tab.height + m.rpx(8))) / 2, W: dw, H: m.tab.height + m.rpx(8)}
 	fillRoundBox(p, th, dr, m.rpx(6), onAccent)
-	m.tab.draw(img, dr.X+m.rpx(12), dr.Y+(dr.H-m.tab.height)/2, done, th.Accent)
+	m.tab.labelAt(p, th, dr.X+m.rpx(12), dr.Y+(dr.H-m.tab.height)/2, done, th.Accent)
 }
 
 // hitSettings maps a click in the preferences view to an action.
