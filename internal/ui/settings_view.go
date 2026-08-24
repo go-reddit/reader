@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"image"
 	"strings"
 
 	"github.com/go-reddit/reader/internal/settings"
@@ -29,7 +28,7 @@ type sButton struct {
 func (s *Scene) OpenSettings() {
 	s.Mode = ModeSettings
 	s.selEdit = s.Active
-	s.input = ""
+	s.settingsEntry.SetText("")
 }
 
 // CloseSettings returns to the feed view.
@@ -52,10 +51,10 @@ func (s *Scene) TypeRune(r rune) {
 	case s.Mode == ModeLogin:
 		s.loginTypeRune(r)
 	case s.Mode == ModeFeed && s.searchFocused:
-		s.search += string(r)
+		s.searchEntry.OnEvent(toolkit.Event{Kind: toolkit.EventChar, Code: string(r)})
 		s.ScrollY = 0
 	default:
-		s.input += string(r)
+		s.settingsEntry.OnEvent(toolkit.Event{Kind: toolkit.EventChar, Code: string(r)})
 	}
 }
 
@@ -65,29 +64,21 @@ func (s *Scene) Backspace() {
 	case s.Mode == ModeLogin:
 		s.loginBackspace()
 	case s.Mode == ModeFeed && s.searchFocused:
-		s.search = trimLastRune(s.search)
+		s.searchEntry.OnEvent(toolkit.Event{Kind: toolkit.EventKeyDown, Code: "Backspace"})
 		s.ScrollY = 0
 	default:
-		s.input = trimLastRune(s.input)
+		s.settingsEntry.OnEvent(toolkit.Event{Kind: toolkit.EventKeyDown, Code: "Backspace"})
 	}
-}
-
-func trimLastRune(str string) string {
-	rs := []rune(str)
-	if len(rs) == 0 {
-		return str
-	}
-	return string(rs[:len(rs)-1])
 }
 
 // Input returns the current add-subreddit text (for the front-end display).
-func (s *Scene) Input() string { return s.input }
+func (s *Scene) Input() string { return s.settingsEntry.Value() }
 
 // AddInputFeed adds the typed subreddit to the edited profile and clears the
 // field. Blank/duplicate entries are ignored.
 func (s *Scene) AddInputFeed() {
-	name := strings.TrimPrefix(strings.TrimSpace(s.input), "r/")
-	s.input = ""
+	name := strings.TrimPrefix(strings.TrimSpace(s.settingsEntry.Value()), "r/")
+	s.settingsEntry.SetText("")
 	if name == "" || s.selEdit < 0 || s.selEdit >= len(s.Profiles) {
 		return
 	}
@@ -217,7 +208,6 @@ func (s *Scene) drawSettings(buf []byte) {
 	s.layoutSettings()
 	m := s.m
 	p := painter.NewPixelPainter(buf, s.W, s.H)
-	img := &image.RGBA{Pix: buf, Stride: s.W * 4, Rect: image.Rect(0, 0, s.W, s.H)}
 	th := s.theme
 	onAccent := th.Background
 	if v, ok := th.Extra["OnAccent"]; ok {
@@ -255,7 +245,8 @@ func (s *Scene) drawSettings(buf []byte) {
 			w.Draw(p, th)
 			continue
 		}
-		w := &toolkit.Button{Label: b.label, Selected: b.active}
+		w := toolkit.NewButton(b.label, nil)
+		w.Selected().Set(b.active)
 		w.Font = pillFont
 		if b.danger {
 			w.Style = toolkit.ButtonDanger
@@ -264,11 +255,10 @@ func (s *Scene) drawSettings(buf []byte) {
 		w.Draw(p, th)
 	}
 
-	// Add-subreddit input field is a generic toolkit.Entry (placeholder from the
-	// toolkit's own Entry.Placeholder), focused since settings routes typed text
-	// straight into it, with the caret parked at the end.
+	// Add-subreddit input field is the persistent toolkit.Entry, focused since
+	// settings routes typed text straight into it through OnEvent.
 	if s.sInputR.W > 0 {
-		w := &toolkit.Entry{Text: s.input, Placeholder: "add subreddit…", Cursor: len([]rune(s.input))}
+		w := s.settingsEntry
 		w.SetFocused(true)
 		w.Font = pillFont
 		w.SetBounds(s.sInputR)
@@ -277,12 +267,12 @@ func (s *Scene) drawSettings(buf []byte) {
 
 	// Topbar: title + Done (drawn last so it overpaints any overflow).
 	fillBox(p, th, painter.Rect{X: 0, Y: 0, W: s.W, H: m.topbarH}, th.Accent)
-	m.header.draw(img, m.pad, (m.topbarH-m.header.height)/2, "Settings", onAccent)
+	m.header.labelAt(p, th, m.pad, (m.topbarH-m.header.height)/2, "Settings", onAccent)
 	done := "Done"
 	dw := m.tab.width(done) + m.rpx(24)
 	dr := toolkit.Rect{X: s.W - m.pad - dw, Y: (m.topbarH - (m.tab.height + m.rpx(8))) / 2, W: dw, H: m.tab.height + m.rpx(8)}
 	fillRoundBox(p, th, dr, m.rpx(6), onAccent)
-	m.tab.draw(img, dr.X+m.rpx(12), dr.Y+(dr.H-m.tab.height)/2, done, th.Accent)
+	m.tab.labelAt(p, th, dr.X+m.rpx(12), dr.Y+(dr.H-m.tab.height)/2, done, th.Accent)
 }
 
 // hitSettings maps a click in the preferences view to an action.

@@ -1,8 +1,6 @@
 package ui
 
 import (
-	"image"
-
 	"github.com/go-widgets/painter"
 	"github.com/go-widgets/toolkit"
 )
@@ -16,11 +14,23 @@ import (
 // OpenLogin enters the login view with empty fields.
 func (s *Scene) OpenLogin() {
 	s.Mode = ModeLogin
-	s.loginID, s.loginSecret, s.loginFocus, s.loginErr = "", "", 0, ""
+	s.loginIDEntry.SetText("")
+	s.loginSecretEntry.SetText("")
+	s.loginFocus, s.loginErr = 0, ""
 }
 
 // LoginCredentials returns the typed client id + secret.
-func (s *Scene) LoginCredentials() (id, secret string) { return s.loginID, s.loginSecret }
+func (s *Scene) LoginCredentials() (id, secret string) {
+	return s.loginIDEntry.Value(), s.loginSecretEntry.Value()
+}
+
+// loginField returns the Entry that currently receives typed text.
+func (s *Scene) loginField() *toolkit.Entry {
+	if s.loginFocus == 1 {
+		return s.loginSecretEntry
+	}
+	return s.loginIDEntry
+}
 
 // SetLoginError shows an error under the form (e.g. a cancelled Touch ID).
 func (s *Scene) SetLoginError(msg string) { s.loginErr = msg }
@@ -36,19 +46,11 @@ func (s *Scene) FocusLoginField(i int) {
 func (s *Scene) NextLoginField() { s.loginFocus = 1 - s.loginFocus }
 
 func (s *Scene) loginTypeRune(r rune) {
-	if s.loginFocus == 1 {
-		s.loginSecret += string(r)
-	} else {
-		s.loginID += string(r)
-	}
+	s.loginField().OnEvent(toolkit.Event{Kind: toolkit.EventChar, Code: string(r)})
 }
 
 func (s *Scene) loginBackspace() {
-	if s.loginFocus == 1 {
-		s.loginSecret = trimLastRune(s.loginSecret)
-	} else {
-		s.loginID = trimLastRune(s.loginID)
-	}
+	s.loginField().OnEvent(toolkit.Event{Kind: toolkit.EventKeyDown, Code: "Backspace"})
 }
 
 // loginLayout computes the field + button rectangles.
@@ -80,7 +82,6 @@ func (s *Scene) drawLogin(buf []byte) {
 	s.loginLayout()
 	m := s.m
 	p := painter.NewPixelPainter(buf, s.W, s.H)
-	img := &image.RGBA{Pix: buf, Stride: s.W * 4, Rect: image.Rect(0, 0, s.W, s.H)}
 	th := s.theme
 	onAccent := th.Background
 	if v, ok := th.Extra["OnAccent"]; ok {
@@ -92,50 +93,49 @@ func (s *Scene) drawLogin(buf []byte) {
 
 	// Intro.
 	introY := m.topbarH + m.pad*2
-	m.side.draw(img, m.pad, introY, "Enter your Reddit app's client id + secret (reddit.com/prefs/apps).", muteS)
+	m.side.labelAt(p, th, m.pad, introY, "Enter your Reddit app's client id + secret (reddit.com/prefs/apps).", muteS)
 
 	// Field labels + boxes are stock go-widgets: toolkit.Label captions (muted)
 	// over toolkit.Entry fields (the secret one masked by the toolkit's own Mask),
 	// with the caret parked at the end since the reader drives the text itself.
 	labelFont := ttFont(false, m.side.px)
 	fieldFont := ttFont(true, m.tab.px)
-	drawField := func(label string, r toolkit.Rect, text string, secret, focused bool) {
+	// The two fields are the persistent toolkit.Entry widgets (the secret one is
+	// masked at construction); their captions are stock toolkit.Label.
+	drawField := func(label string, r toolkit.Rect, e *toolkit.Entry, focused bool) {
 		lbl := toolkit.NewLabel(label)
 		lbl.Font, lbl.Ink = labelFont, muteS
 		lbl.SetBounds(toolkit.Rect{X: r.X, Y: r.Y - m.side.height - m.rpx(2), W: r.W, H: m.side.height})
 		lbl.Draw(p, th)
 
-		e := &toolkit.Entry{Text: text, Placeholder: "…", Cursor: len([]rune(text))}
 		e.SetFocused(focused)
 		e.Font = fieldFont
-		if secret {
-			e.Mask = '•' // the toolkit masks the display; Text keeps the real value
-		}
 		e.SetBounds(r)
 		e.Draw(p, th)
 	}
-	drawField("CLIENT ID", s.loginIDR, s.loginID, false, s.loginFocus == 0)
-	drawField("CLIENT SECRET", s.loginSecretR, s.loginSecret, true, s.loginFocus == 1)
+	drawField("CLIENT ID", s.loginIDR, s.loginIDEntry, s.loginFocus == 0)
+	drawField("CLIENT SECRET", s.loginSecretR, s.loginSecretEntry, s.loginFocus == 1)
 
 	// Submit button is a toolkit.Button (accent-primary style).
 	for _, b := range s.sButtons {
-		w := &toolkit.Button{Label: b.label, Style: toolkit.ButtonProminent}
+		w := toolkit.NewButton(b.label, nil)
+		w.Style = toolkit.ButtonProminent
 		w.Font = fieldFont
 		w.SetBounds(b.rect)
 		w.Draw(p, th)
 	}
 	if s.loginErr != "" {
 		errY := s.sButtons[len(s.sButtons)-1].rect.Y + s.sButtons[len(s.sButtons)-1].rect.H + m.pad
-		m.side.draw(img, m.pad, errY, s.loginErr, rgb(0xD03030))
+		m.side.labelAt(p, th, m.pad, errY, s.loginErr, rgb(0xD03030))
 	}
 
 	// Topbar + Cancel (drawn last).
 	fillBox(p, th, painter.Rect{X: 0, Y: 0, W: s.W, H: m.topbarH}, th.Accent)
-	m.header.draw(img, m.pad, (m.topbarH-m.header.height)/2, "Log in to Reddit", onAccent)
+	m.header.labelAt(p, th, m.pad, (m.topbarH-m.header.height)/2, "Log in to Reddit", onAccent)
 	cw := m.tab.width("Cancel") + m.rpx(24)
 	cr := toolkit.Rect{X: s.W - m.pad - cw, Y: (m.topbarH - (m.tab.height + m.rpx(8))) / 2, W: cw, H: m.tab.height + m.rpx(8)}
 	fillRoundBox(p, th, cr, m.rpx(6), onAccent)
-	m.tab.draw(img, cr.X+m.rpx(12), cr.Y+(cr.H-m.tab.height)/2, "Cancel", th.Accent)
+	m.tab.labelAt(p, th, cr.X+m.rpx(12), cr.Y+(cr.H-m.tab.height)/2, "Cancel", th.Accent)
 }
 
 // hitLogin maps a click in the login view to an action.

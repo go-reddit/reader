@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"image"
 	"sync"
 
 	"github.com/go-opentype/fonts/goregular"
@@ -129,18 +128,18 @@ func getFace(px int, bold bool) textFace {
 }
 
 // width is the rendered pixel width of s, shaped: ligatures, cursive joining and
-// kerning are all reflected, so it matches what draw paints exactly.
+// kerning are all reflected, so it matches what a Label paints exactly (a Label
+// built with this face measures the run through the very same font).
 func (tf textFace) width(s string) int { return tf.font.Measure(s) }
 
-// draw renders s with its top-left at (x, top) in col, into img (which must
-// alias the scene's RGBA buffer: a tightly packed, origin-zero surface, which is
-// how every buffer in this package is built).
-func (tf textFace) draw(img *image.RGBA, x, top int, s string, col toolkit.RGBA) {
-	b := img.Bounds()
-	tf.font.Draw(painter.NewPixelPainter(img.Pix, b.Dx(), b.Dy()), x, top, s, col)
-}
-
-// drawRight renders s right-aligned so its right edge sits at x.
-func (tf textFace) drawRight(img *image.RGBA, x, top int, s string, col toolkit.RGBA) {
-	tf.draw(img, x-tf.width(s), top, s, col)
+// labelAt paints s as a stock toolkit.Label carrying this face, its top-left at
+// (x, top). There is no private glyph-blit any more: every string the reader
+// draws goes through a real widget, so a11y walkers, selection and future
+// theming all see it. The bounds are exactly one glyph-row tall and top-anchored
+// so the Label lands where the old top-left convention put it.
+func (tf textFace) labelAt(p painter.Painter, th *toolkit.Theme, x, top int, s string, ink toolkit.RGBA) {
+	l := toolkit.NewLabel(s)
+	l.Font, l.Ink, l.VAlign = tf.font, ink, toolkit.VTop
+	l.SetBounds(toolkit.Rect{X: x, Y: top, W: tf.width(s), H: tf.height})
+	l.Draw(p, th)
 }

@@ -15,10 +15,13 @@ func loginScene() *Scene {
 
 func TestOpenLogin(t *testing.T) {
 	s := NewScene()
-	s.loginID, s.loginSecret, s.loginErr = "x", "y", "z"
+	s.loginIDEntry.SetText("x")
+	s.loginSecretEntry.SetText("y")
+	s.loginErr = "z"
 	s.OpenLogin()
-	if s.Mode != ModeLogin || s.loginID != "" || s.loginSecret != "" || s.loginFocus != 0 || s.loginErr != "" {
-		t.Fatalf("OpenLogin => %+v", s)
+	id, sec := s.LoginCredentials()
+	if s.Mode != ModeLogin || id != "" || sec != "" || s.loginFocus != 0 || s.loginErr != "" {
+		t.Fatalf("OpenLogin => mode=%d id=%q sec=%q focus=%d err=%q", s.Mode, id, sec, s.loginFocus, s.loginErr)
 	}
 }
 
@@ -100,8 +103,8 @@ func TestDrawLoginSmoke(t *testing.T) {
 	// Filled + focused secret (caret + mask) + an error line + Extra OnAccent.
 	s2 := loginScene()
 	s2.SetTheme(toolkit.AdwaitaDark())
-	s2.loginID = "id"
-	s2.loginSecret = "secret"
+	s2.loginIDEntry.SetText("id")
+	s2.loginSecretEntry.SetText("secret")
 	s2.loginFocus = 1
 	s2.SetLoginError("bad credentials")
 	s2.Draw(make([]byte, s2.W*s2.H*4))
@@ -110,12 +113,6 @@ func TestDrawLoginSmoke(t *testing.T) {
 	s3 := loginScene()
 	s3.Resize(MinW, MinH)
 	s3.Draw(make([]byte, s3.W*s3.H*4))
-}
-
-func TestTrimLastRune(t *testing.T) {
-	if trimLastRune("") != "" || trimLastRune("ab") != "a" {
-		t.Error("trimLastRune")
-	}
 }
 
 func TestNextLoginField(t *testing.T) {

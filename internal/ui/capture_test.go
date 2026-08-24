@@ -68,8 +68,8 @@ func TestCapture(t *testing.T) {
 	render("settings", func(s *Scene) { s.OpenSettings() })
 	render("login", func(s *Scene) {
 		s.OpenLogin()
-		s.loginID = "aBcD1234xyz"
-		s.loginSecret = "s3cr3t-value"
+		s.loginIDEntry.SetText("aBcD1234xyz")
+		s.loginSecretEntry.SetText("s3cr3t-value")
 		s.FocusLoginField(1)
 	})
 }
