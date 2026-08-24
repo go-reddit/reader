@@ -168,8 +168,9 @@ func TestHitTestSort(t *testing.T) {
 
 func TestHitTestProfile(t *testing.T) {
 	s := sizedScene(5)
-	pt := s.profTabs[1] // "Perso"
-	hit := s.HitTest(pt.rect.X+pt.rect.W/2, pt.rect.Y+pt.rect.H/2)
+	s.layout()
+	pt := s.profBar.TabRect(1) // "Perso"
+	hit := s.HitTest(pt.X+pt.W/2, pt.Y+pt.H/2)
 	if hit.Kind != HitProfile || hit.Profile != 1 {
 		t.Fatalf("profile hit = %+v", hit)
 	}
@@ -185,15 +186,23 @@ func TestHitTestSettings(t *testing.T) {
 
 func TestHitTestFeed(t *testing.T) {
 	s := sizedScene(5)
-	item := s.side[2]
-	hit := s.HitTest(item.rect.X+10, item.rect.Y+item.rect.H/2)
+	s.layout()
+	// Third feed row, mapped through the FEEDS TreeView's own row geometry.
+	b := s.sideTree.Bounds()
+	rh := s.m.sideItemH
+	hit := s.HitTest(b.X+10, b.Y+2*rh+rh/2)
 	if hit.Kind != HitFeed || hit.Feed != s.ActiveFeeds()[2] {
 		t.Fatalf("feed hit = %+v", hit)
 	}
-	// The "FEEDS" header row (between profile tabs and the first item) misses.
+	// The "FEEDS" header row (between profile tabs and the first item, above the
+	// TreeView band) misses.
 	headerY := s.m.topbarH + s.m.profileTabH + s.m.sideItemH/2
 	if h := s.HitTest(10, headerY); h.Kind != HitNone {
 		t.Errorf("feeds header => %+v", h)
+	}
+	// Empty space below the last feed row (still in the sidebar band) misses.
+	if h := s.HitTest(b.X+10, b.Y+b.H-1); h.Kind != HitNone {
+		t.Errorf("empty sidebar band => %+v", h)
 	}
 }
 
@@ -214,6 +223,21 @@ func TestHitTestPost(t *testing.T) {
 	if hit.Kind != HitPost || hit.Post.ID != s.Posts[1].ID {
 		t.Errorf("post hit after scroll = %+v", hit)
 	}
+}
+
+func TestSidebarFeedsBandClamp(t *testing.T) {
+	// A large zoom against the minimum surface pushes the pinned footer above the
+	// FEEDS band's top, so the band height clamps to zero instead of going
+	// negative. Draw must stay safe (front-page "" row + selection exercised).
+	s := NewScene()
+	s.SetProfiles([]settings.Profile{{Name: "Home", Feeds: []string{"", "golang"}}}, 0)
+	s.SetFeed("", "hot") // front page selected -> "" row is the Selected node
+	s.Scale = 3
+	s.Resize(MinW, MinH)
+	if b := s.sideTree.Bounds(); b.H != 0 {
+		t.Fatalf("feeds band should clamp to 0, got H=%d", b.H)
+	}
+	s.Draw(make([]byte, s.W*s.H*4)) // renders the "Front page" row without panic
 }
 
 func TestHitTestFooterIsMiss(t *testing.T) {

@@ -137,31 +137,63 @@ func TestHitSettings(t *testing.T) {
 	s := settingsScene()
 	s.layoutSettings()
 
-	// Done in the topbar.
-	m := s.m
-	dw := m.tab.width("Done") + m.rpx(24)
-	if h := s.HitTest(s.W-m.pad-dw/2, m.topbarH/2); h.Kind != HitCloseSettings {
+	// Done in the topbar resolves through the persistent Button's own bounds.
+	dr := s.doneBtn.Bounds()
+	if h := s.HitTest(dr.X+dr.W/2, dr.Y+dr.H/2); h.Kind != HitCloseSettings {
 		t.Errorf("Done => %+v", h)
 	}
 
-	// Every button kind resolves via its rect centre.
+	// Every registered widget resolves via its own centre, through its HitTest.
 	kinds := map[HitKind]bool{}
-	for _, b := range s.sButtons {
-		h := s.HitTest(b.rect.X+b.rect.W/2, b.rect.Y+b.rect.H/2)
+	for _, wh := range s.settingsHits {
+		r := wh.w.Bounds()
+		h := s.HitTest(r.X+r.W/2, r.Y+r.H/2)
 		kinds[h.Kind] = true
-		if h.Kind == HitRemoveFeed && h.Value == "" && b.value != "" {
+		if h.Kind == HitRemoveFeed && h.Value == "" && wh.hit.Value != "" {
 			t.Errorf("remove-feed lost its value: %+v", h)
 		}
 	}
-	for _, want := range []HitKind{HitTheme, HitSort, HitSelectProfile, HitNewProfile, HitRemoveFeed, HitAddFeed, HitDeleteProfile} {
+	for _, want := range []HitKind{HitTheme, HitSort, HitSelectProfile, HitNewProfile, HitRemoveFeed, HitAddFeed, HitDeleteProfile, HitCloseSettings} {
 		if !kinds[want] {
-			t.Errorf("no button produced kind %d", want)
+			t.Errorf("no widget produced kind %d", want)
 		}
 	}
 
 	// Empty space misses.
-	if h := s.HitTest(s.W-m.pad, s.H-m.pad); h.Kind != HitNone {
+	if h := s.HitTest(s.W-s.m.pad, s.H-s.m.pad); h.Kind != HitNone {
 		t.Errorf("empty space => %+v", h)
+	}
+}
+
+func TestSettingsWidgetsShrink(t *testing.T) {
+	// The profile-pill and feed-chip slices are persistent and REUSED across
+	// frames: after a draw with several profiles/feeds, deleting some and
+	// redrawing must truncate the reused widgets, not leave stale ones hit-able.
+	s := settingsScene()
+	s.NewProfile()
+	s.NewProfile()
+	s.Profiles[0].Feeds = []string{"a", "b", "c", "d"}
+	s.selEdit = 0
+	s.Draw(make([]byte, s.W*s.H*4)) // grow the reused slices
+	nProf, nChip := len(s.profileButtons), len(s.feedChips)
+
+	s.RemoveFeed(0, "a")
+	s.RemoveFeed(0, "b")
+	s.DeleteProfile(len(s.Profiles) - 1)
+	s.Draw(make([]byte, s.W*s.H*4)) // shrink them
+
+	if len(s.profileButtons) != len(s.Profiles) || len(s.profileButtons) >= nProf {
+		t.Errorf("profile buttons not truncated: %d (was %d, profiles %d)", len(s.profileButtons), nProf, len(s.Profiles))
+	}
+	if len(s.feedChips) != len(s.Profiles[0].Feeds) || len(s.feedChips) >= nChip {
+		t.Errorf("feed chips not truncated: %d (was %d, feeds %d)", len(s.feedChips), nChip, len(s.Profiles[0].Feeds))
+	}
+	// A click where a now-removed profile pill used to sit no longer resolves to
+	// a stale HitSelectProfile for an out-of-range index.
+	for _, wh := range s.settingsHits {
+		if wh.hit.Kind == HitSelectProfile && wh.hit.Profile >= len(s.Profiles) {
+			t.Errorf("stale profile pill still registered: %+v", wh.hit)
+		}
 	}
 }
 

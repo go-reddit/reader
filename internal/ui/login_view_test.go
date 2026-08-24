@@ -67,27 +67,27 @@ func TestSetLoginError(t *testing.T) {
 func TestHitLogin(t *testing.T) {
 	s := loginScene()
 	s.loginLayout()
-	m := s.m
 
-	// Cancel.
-	cw := m.tab.width("Cancel") + m.rpx(24)
-	if h := s.HitTest(s.W-m.pad-cw/2, m.topbarH/2); h.Kind != HitLoginCancel {
+	// Cancel, fields and submit all resolve through their persistent widgets'
+	// own bounds — no rect math in hitLogin.
+	cr := s.loginCancelBtn.Bounds()
+	if h := s.HitTest(cr.X+cr.W/2, cr.Y+cr.H/2); h.Kind != HitLoginCancel {
 		t.Errorf("cancel => %+v", h)
 	}
-	// Fields.
-	if h := s.HitTest(s.loginIDR.X+10, s.loginIDR.Y+s.loginIDR.H/2); h.Kind != HitLoginField || h.Profile != 0 {
+	idr := s.loginIDEntry.Bounds()
+	if h := s.HitTest(idr.X+10, idr.Y+idr.H/2); h.Kind != HitLoginField || h.Profile != 0 {
 		t.Errorf("id field => %+v", h)
 	}
-	if h := s.HitTest(s.loginSecretR.X+10, s.loginSecretR.Y+s.loginSecretR.H/2); h.Kind != HitLoginField || h.Profile != 1 {
+	secr := s.loginSecretEntry.Bounds()
+	if h := s.HitTest(secr.X+10, secr.Y+secr.H/2); h.Kind != HitLoginField || h.Profile != 1 {
 		t.Errorf("secret field => %+v", h)
 	}
-	// Submit.
-	b := s.sButtons[0]
-	if h := s.HitTest(b.rect.X+b.rect.W/2, b.rect.Y+b.rect.H/2); h.Kind != HitLoginSubmit {
+	br := s.loginSubmitBtn.Bounds()
+	if h := s.HitTest(br.X+br.W/2, br.Y+br.H/2); h.Kind != HitLoginSubmit {
 		t.Errorf("submit => %+v", h)
 	}
 	// Empty space misses.
-	if h := s.HitTest(s.W-m.pad, s.H-m.pad); h.Kind != HitNone {
+	if h := s.HitTest(s.W-s.m.pad, s.H-s.m.pad); h.Kind != HitNone {
 		t.Errorf("empty => %+v", h)
 	}
 }

@@ -117,26 +117,55 @@ type Scene struct {
 	LoggedIn      bool // reflects the auth state (drives the sidebar label)
 
 	// Login view. The client-id + secret fields are persistent toolkit.Entry
-	// widgets (the secret one masked); they own the typed values.
+	// widgets (the secret one masked); they own the typed values. The submit +
+	// cancel buttons are persistent toolkit.Button widgets, built once.
 	loginIDEntry     *toolkit.Entry
 	loginSecretEntry *toolkit.Entry
 	loginFocus       int // 0 = client id, 1 = client secret
 	loginErr         string
+	loginSubmitBtn   *toolkit.Button
+	loginCancelBtn   *toolkit.Button
+	loginHits        []widgetHit
 
-	m         metrics
-	tabs      []tabHit
-	profTabs  []profTabHit
-	side      []sideHit
+	// Sidebar widgets. The profile tabs are a toolkit.FolderTabs (owns its own
+	// tab geometry + selection) and the FEEDS list is a toolkit.TreeView (owns
+	// row layout, scroll and hit-testing) with a RowRenderer painting each feed
+	// label — so no scene-side rect slice mirrors the sidebar draw. Only the two
+	// bottom-pinned chrome rows (Account, Settings) keep a rect: they are fixed,
+	// single-source (computed once in layout, read by both Draw and HitTest) and
+	// sit outside the scrolling list, exactly like go-news-reader's pinned footer.
+	profBar   *toolkit.FolderTabs
+	sideTree  *toolkit.TreeView
 	settingsR toolkit.Rect
 	accountR  toolkit.Rect
-	rows      []rowLayout
-	contentH  int
 
-	sButtons []sButton // clickable regions in the settings/login views
-	sInputR  toolkit.Rect
+	m        metrics
+	tabs     []tabHit
+	rows     []rowLayout
+	contentH int
 
-	loginIDR     toolkit.Rect
-	loginSecretR toolkit.Rect
+	// Settings-view widgets, all persistent (built once in NewScene, repositioned
+	// each layout): the theme + sort pill rows, the profile switcher pills, the
+	// per-feed removable chips and the New/Add/Delete/Done buttons. settingsHits
+	// pairs each with the Hit its own HitTest resolves to.
+	themeButtons   []*toolkit.Button
+	sortButtons    []*toolkit.Button
+	profileButtons []*toolkit.Button
+	feedChips      []*toolkit.Chip
+	newProfileBtn  *toolkit.Button
+	addBtn         *toolkit.Button
+	deleteBtn      *toolkit.Button
+	doneBtn        *toolkit.Button
+	settingsHits   []widgetHit
+}
+
+// widgetHit pairs an interactive widget with the Hit its own HitTest resolves
+// to: a view builds a []widgetHit each layout (setting each widget's Bounds),
+// then hit-testing is a loop over the widgets' own HitTest — no parallel rect
+// slice kept in sync with the draw.
+type widgetHit struct {
+	w   toolkit.Widget
+	hit Hit
 }
 
 type rowLayout struct {
@@ -146,14 +175,6 @@ type rowLayout struct {
 type tabHit struct {
 	rect toolkit.Rect
 	sort string
-}
-type profTabHit struct {
-	rect  toolkit.Rect
-	index int
-}
-type sideHit struct {
-	rect toolkit.Rect
-	feed string
 }
 
 // NewScene returns a Scene at the default size with the light theme and the
@@ -166,7 +187,16 @@ func NewScene() *Scene {
 	settingsEntry.Placeholder = "add subreddit…"
 	loginSecretEntry := toolkit.NewEntry("")
 	loginSecretEntry.Mask = '•' // display the secret masked; Value() keeps the real text
-	return &Scene{
+
+	// The FEEDS list is a TreeView with a synthetic hidden root (its children are
+	// the flush, depth-0 feed rows); its own scrollbar is suppressed and the
+	// RowRenderer paints each feed label. The profile tabs are a compact,
+	// label-width FolderTabs.
+	sideTree := toolkit.NewTreeView(nil)
+	sideTree.HideRoot = true
+	sideTree.HideScrollbar = true
+
+	s := &Scene{
 		W:                900,
 		H:                660,
 		theme:            toolkit.DefaultLight(),
@@ -179,7 +209,26 @@ func NewScene() *Scene {
 		settingsEntry:    settingsEntry,
 		loginIDEntry:     toolkit.NewEntry(""),
 		loginSecretEntry: loginSecretEntry,
+		loginSubmitBtn:   toolkit.NewButton("Log in with Touch ID", nil),
+		loginCancelBtn:   toolkit.NewButton("Cancel", nil),
+		profBar:          toolkit.NewFolderTabs(nil, 0),
+		sideTree:         sideTree,
+		newProfileBtn:    toolkit.NewButton("+ New", nil),
+		addBtn:           toolkit.NewButton("Add", nil),
+		deleteBtn:        toolkit.NewButton("Delete profile", nil),
+		doneBtn:          toolkit.NewButton("Done", nil),
 	}
+	s.sideTree.RowRenderer = s.drawSideRow
+	s.loginSubmitBtn.Style = toolkit.ButtonProminent
+	s.deleteBtn.Style = toolkit.ButtonDanger
+	// The theme + sort pill rows are fixed-length, so their buttons are built once.
+	for _, tn := range []string{"system", "light", "dark"} {
+		s.themeButtons = append(s.themeButtons, toolkit.NewButton(titleCase(tn), nil))
+	}
+	for _, srt := range Sorts {
+		s.sortButtons = append(s.sortButtons, toolkit.NewButton(srt, nil))
+	}
+	return s
 }
 
 // SetTheme swaps the palette. A nil theme is ignored.
@@ -300,8 +349,12 @@ func (s *Scene) Scroll(dy int) bool {
 
 const appTitle = "go-reddit"
 
-// layout recomputes metrics + the tab / profile / sidebar / feed rectangles.
+// layout recomputes metrics + the topbar tabs, sidebar widgets and feed rows.
+// It also pins the toolkit metric scale to the reader's effective scale so the
+// widgets' own geometry (FolderTabs tab widths, TreeView rows, button pads) is
+// computed identically whether it is a Draw or a HitTest asking.
 func (s *Scene) layout() {
+	toolkit.SetMetricScale(s.effScale())
 	s.m = computeMetrics(s.effScale())
 	m := s.m
 
@@ -325,29 +378,27 @@ func (s *Scene) layout() {
 	}
 	s.searchR = toolkit.Rect{X: s.W - m.pad - searchW, Y: (m.topbarH - fieldH) / 2, W: searchW, H: fieldH}
 
-	// Sidebar profile tabs (top row).
-	s.profTabs = s.profTabs[:0]
-	px := m.pad
-	for i, p := range s.Profiles {
-		w := m.tab.width(p.Name) + 2*m.tabPad
-		s.profTabs = append(s.profTabs, profTabHit{
-			rect:  toolkit.Rect{X: px, Y: m.topbarH, W: w, H: m.profileTabH},
-			index: i,
-		})
-		px += w + m.rpx(4)
-	}
-
-	// Sidebar feed items of the active profile, below a "FEEDS" header.
-	s.side = s.side[:0]
-	sy := m.topbarH + m.profileTabH + m.sideItemH
-	for _, f := range s.ActiveFeeds() {
-		s.side = append(s.side, sideHit{rect: toolkit.Rect{X: 0, Y: sy, W: m.sidebarW, H: m.sideItemH}, feed: f})
-		sy += m.sideItemH
-	}
+	// Sidebar profile tabs (top row): a FolderTabs owning its own tab geometry
+	// and selection. Labels track the profiles; Selected tracks the active one.
+	s.profBar.Font = m.tab.font
+	s.profBar.Labels = profileNames(s.Profiles)
+	s.profBar.Selected().Set(s.Active)
+	s.profBar.SetBounds(toolkit.Rect{X: 0, Y: m.topbarH, W: m.sidebarW, H: m.profileTabH})
 
 	// Settings + account entries pinned to the bottom of the sidebar.
 	s.settingsR = toolkit.Rect{X: 0, Y: s.H - m.footerH - m.sideItemH, W: m.sidebarW, H: m.sideItemH}
 	s.accountR = toolkit.Rect{X: 0, Y: s.settingsR.Y - m.sideItemH, W: m.sidebarW, H: m.sideItemH}
+
+	// Sidebar FEEDS list: a TreeView occupying the band between the "FEEDS"
+	// header and the pinned account entry. It owns row layout + hit-testing.
+	feedsTop := m.topbarH + m.profileTabH + m.sideItemH
+	feedsH := s.accountR.Y - feedsTop
+	if feedsH < 0 {
+		feedsH = 0
+	}
+	s.sideTree.RowHeight = m.sideItemH
+	s.buildSideTree()
+	s.sideTree.SetBounds(toolkit.Rect{X: 0, Y: feedsTop, W: m.sidebarW, H: feedsH})
 
 	// Feed rows (filtered by the topbar search term, by title).
 	s.rows = s.rows[:0]
@@ -387,9 +438,10 @@ func (s *Scene) HitTest(x, y int) Hit {
 	case y >= s.H-m.footerH:
 		return Hit{}
 	case x < m.sidebarW:
-		for _, t := range s.profTabs {
-			if t.rect.Contains(x, y) {
-				return Hit{Kind: HitProfile, Profile: t.index}
+		// Profile tabs: the FolderTabs' own per-tab geometry answers "which tab".
+		for i := range s.Profiles {
+			if s.profBar.TabRect(i).Contains(x, y) {
+				return Hit{Kind: HitProfile, Profile: i}
 			}
 		}
 		if s.settingsR.Contains(x, y) {
@@ -401,10 +453,11 @@ func (s *Scene) HitTest(x, y int) Hit {
 			}
 			return Hit{Kind: HitOpenLogin}
 		}
-		for _, it := range s.side {
-			if it.rect.Contains(x, y) {
-				return Hit{Kind: HitFeed, Feed: it.feed}
-			}
+		// FEEDS list: the TreeView maps the click to the node under it (band-local
+		// coordinates); empty space or a row scrolled out resolves to no node.
+		b := s.sideTree.Bounds()
+		if node := s.sideTree.NodeAt(x, y-b.Y); node != nil {
+			return Hit{Kind: HitFeed, Feed: feedNodeData(node).feed}
 		}
 		return Hit{}
 	default:
@@ -470,34 +523,17 @@ func (s *Scene) Draw(buf []byte) {
 	// --- sidebar ---
 	fillBox(p, th, painter.Rect{X: 0, Y: m.topbarH, W: m.sidebarW, H: s.H - m.topbarH - m.footerH}, th.SurfaceAlt)
 
-	// Profile tabs.
-	for _, t := range s.profTabs {
-		active := t.index == s.Active
-		col := th.OnSurface
-		if active {
-			fillRoundBox(p, th, painter.Rect{X: t.rect.X, Y: t.rect.Y + m.rpx(3), W: t.rect.W, H: t.rect.H - m.rpx(6)}, m.rpx(5), th.Accent)
-			col = onAccent
-		}
-		m.tab.labelAt(p, th, t.rect.X+m.tabPad, t.rect.Y+(m.profileTabH-m.tab.height)/2, s.Profiles[t.index].Name, col)
-	}
+	// Profile tabs: the FolderTabs paints its own strip + tabs + selection.
+	s.profBar.Draw(p, th)
 
-	// FEEDS header + active-profile feeds.
+	// FEEDS header + the FEEDS TreeView. The tree paints each row's selection
+	// fill itself; drawn with a theme whose Surface is the sidebar band so the
+	// non-selected rows blend into it (only the selected row gets the accent).
 	headerY := m.topbarH + m.profileTabH
 	m.side.labelAt(p, th, m.pad, headerY+(m.sideItemH-m.side.height)/2, "FEEDS", muteS)
-	for _, it := range s.side {
-		label := "Front page"
-		if it.feed != "" {
-			label = "r/" + it.feed
-		}
-		selected := it.feed == s.Subreddit
-		col := th.OnSurface
-		if selected {
-			fillBox(p, th, painter.Rect{X: it.rect.X, Y: it.rect.Y, W: it.rect.W, H: it.rect.H}, th.Surface)
-			fillBox(p, th, painter.Rect{X: 0, Y: it.rect.Y, W: m.rpx(3), H: it.rect.H}, th.Accent)
-			col = th.Accent
-		}
-		m.side.labelAt(p, th, m.pad, it.rect.Y+(m.sideItemH-m.side.height)/2, label, col)
-	}
+	sideTheme := *th
+	sideTheme.Surface = th.SurfaceAlt
+	s.sideTree.Draw(p, &sideTheme)
 
 	// Account + Settings entries (pinned bottom) + sidebar border. Each carries a
 	// real Iconoir glyph (log-in / log-out / gear) beside its label.
@@ -532,6 +568,11 @@ func (s *Scene) Draw(buf []byte) {
 	se.Draw(p, th)
 
 	// --- footer: a toolkit.Statusbar with a left status cell + a right hint ---
+	// Both segments are deliberately non-interactive: the post-count and the
+	// keyboard/scroll hint are read-only status, nothing to click. They carry no
+	// StatusSegment.OnClick, so the Statusbar renders (and hit-tests) them as
+	// plain text cells — the reader has no footer action to wire, so this stays a
+	// static status bar rather than an interactive one.
 	status := s.Status
 	if status == "" {
 		status = fmt.Sprintf("%d posts", len(s.Posts))

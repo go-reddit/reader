@@ -17,11 +17,3 @@ func fillBox(p painter.Painter, th *toolkit.Theme, r toolkit.Rect, fill toolkit.
 	b.SetBounds(r)
 	b.Draw(p, th)
 }
-
-// fillRoundBox fills r with a solid colour, corners rounded by radius — the
-// widget form of p.FillRoundRect.
-func fillRoundBox(p painter.Painter, th *toolkit.Theme, r toolkit.Rect, radius int, fill toolkit.RGBA) {
-	b := &toolkit.Backdrop{Fill: fill, Radius: radius}
-	b.SetBounds(r)
-	b.Draw(p, th)
-}

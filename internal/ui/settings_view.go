@@ -11,17 +11,30 @@ import (
 // The in-canvas preferences editor. It is drawn with the same go-widgets
 // painter + anti-aliased text as the rest of the app (no separate HTML page):
 // theme and sort pickers, a profile switcher, and per-profile subreddit chips
-// you remove with a click or add with the text field. Every clickable region
-// is an sButton so hit-testing and drawing stay in lock-step.
+// you remove with a click or add with the text field. Every clickable element is
+// a PERSISTENT toolkit widget (a Button pill, a Chip, an Entry): layoutSettings
+// positions them and records each in s.settingsHits, so hit-testing is a loop
+// over the widgets' own HitTest — there is no parallel rect slice to drift out
+// of sync with the draw.
 
-type sButton struct {
-	rect   toolkit.Rect
-	label  string
-	kind   HitKind
-	value  string
-	index  int
-	active bool
-	danger bool
+// ensureButtons grows/truncates bs to exactly n reusable buttons, so the
+// variable-length pill rows (profile switcher) keep persistent widgets across
+// frames instead of allocating a fresh set every draw.
+func ensureButtons(bs []*toolkit.Button, n int) []*toolkit.Button {
+	for len(bs) < n {
+		bs = append(bs, toolkit.NewButton("", nil))
+	}
+	return bs[:n]
+}
+
+// ensureChips grows/truncates cs to exactly n reusable closable chips.
+func ensureChips(cs []*toolkit.Chip, n int) []*toolkit.Chip {
+	for len(cs) < n {
+		c := toolkit.NewChip("")
+		c.Closable = true
+		cs = append(cs, c)
+	}
+	return cs[:n]
 }
 
 // OpenSettings enters the preferences view, editing the active profile.
@@ -129,81 +142,109 @@ func (s *Scene) Settings() settings.Settings {
 	return settings.Settings{Profiles: s.Profiles, Active: s.Active, Sort: s.Sort, Theme: s.ThemeName}
 }
 
-// layoutSettings computes every button + the input field rectangle.
+// settingsEditable reports whether a valid profile is being edited (so the feed
+// chips + add-input + delete-profile block is shown / hit-tested).
+func (s *Scene) settingsEditable() bool {
+	return s.selEdit >= 0 && s.selEdit < len(s.Profiles)
+}
+
+// layoutSettings positions every persistent preferences widget and records the
+// Hit each one's own HitTest resolves to (s.settingsHits). It flows the pill
+// rows + chip grid top-to-bottom, matching the section captions drawSettings
+// paints. No rectangles are stored: the geometry lives on the widgets.
 func (s *Scene) layoutSettings() {
+	toolkit.SetMetricScale(s.effScale())
 	s.m = computeMetrics(s.effScale())
 	m := s.m
-	s.sButtons = s.sButtons[:0]
+	s.settingsHits = s.settingsHits[:0]
 
 	btnH := m.tab.height + m.rpx(8)
 	gap := m.rpx(6)
+	pillFont := ttFont(true, m.tab.px)
 
-	add := func(x, y int, label string, kind HitKind, value string, index int, active, danger bool) int {
-		w := m.tab.width(label) + m.rpx(20)
-		s.sButtons = append(s.sButtons, sButton{
-			rect: toolkit.Rect{X: x, Y: y, W: w, H: btnH}, label: label,
-			kind: kind, value: value, index: index, active: active, danger: danger,
-		})
+	// place positions a button sized to its own label and registers its Hit.
+	place := func(b *toolkit.Button, x, y int, hit Hit) int {
+		b.Font = pillFont
+		w := m.tab.width(b.Label().Get()) + m.rpx(20)
+		b.SetBounds(toolkit.Rect{X: x, Y: y, W: w, H: btnH})
+		s.settingsHits = append(s.settingsHits, widgetHit{w: b, hit: hit})
 		return x + w + gap
 	}
+
+	// Done, pinned top-right in the topbar.
+	dw := m.tab.width("Done") + m.rpx(24)
+	s.doneBtn.Font = pillFont
+	s.doneBtn.SetBounds(toolkit.Rect{X: s.W - m.pad - dw, Y: (m.topbarH - btnH) / 2, W: dw, H: btnH})
+	s.settingsHits = append(s.settingsHits, widgetHit{w: s.doneBtn, hit: Hit{Kind: HitCloseSettings}})
 
 	// Rows flow top-to-bottom; each "section" advances y.
 	y := m.topbarH + m.pad + m.side.height + gap // below the "Appearance" label
 
 	// Theme buttons.
 	x := m.pad
-	for _, tn := range []string{"system", "light", "dark"} {
-		x = add(x, y, titleCase(tn), HitTheme, tn, 0, s.ThemeName == tn, false)
+	themeNames := []string{"system", "light", "dark"}
+	for i, b := range s.themeButtons {
+		b.Selected().Set(s.ThemeName == themeNames[i])
+		x = place(b, x, y, Hit{Kind: HitTheme, Value: themeNames[i]})
 	}
 	y += btnH + m.pad
 
 	// Sort buttons.
 	y += m.side.height + gap // below the "Default sort" label
 	x = m.pad
-	for _, srt := range Sorts {
-		x = add(x, y, srt, HitSort, srt, 0, s.Sort == srt, false)
+	for i, b := range s.sortButtons {
+		b.Selected().Set(s.Sort == Sorts[i])
+		x = place(b, x, y, Hit{Kind: HitSort, Sort: Sorts[i]})
 	}
 	y += btnH + m.pad*2
 
 	// Profile switcher row (+ New).
 	y += m.side.height + gap // below the "Profiles" label
 	x = m.pad
-	for i, p := range s.Profiles {
-		x = add(x, y, p.Name, HitSelectProfile, "", i, i == s.selEdit, false)
+	s.profileButtons = ensureButtons(s.profileButtons, len(s.Profiles))
+	for i, b := range s.profileButtons {
+		b.Label().Set(s.Profiles[i].Name)
+		b.Selected().Set(i == s.selEdit)
+		x = place(b, x, y, Hit{Kind: HitSelectProfile, Profile: i})
 	}
-	x = add(x, y, "+ New", HitNewProfile, "", 0, false, false)
+	place(s.newProfileBtn, x, y, Hit{Kind: HitNewProfile})
 	y += btnH + m.pad
 
-	// Edited-profile feed chips.
-	if s.selEdit >= 0 && s.selEdit < len(s.Profiles) {
-		x = m.pad
-		for _, f := range s.Profiles[s.selEdit].Feeds {
-			label := "Front page"
-			if f != "" {
-				label = "r/" + f
-			}
-			chipW := m.tab.width(label+"  ×") + m.rpx(20)
-			if x+chipW > s.W-m.pad {
-				x = m.pad
-				y += btnH + gap
-			}
-			s.sButtons = append(s.sButtons, sButton{
-				rect: toolkit.Rect{X: x, Y: y, W: chipW, H: btnH}, label: label + "  ×",
-				kind: HitRemoveFeed, value: f, index: s.selEdit,
-			})
-			x += chipW + gap
-		}
-		y += btnH + m.pad
-
-		// Add-subreddit input + button + delete-profile.
-		s.sInputR = toolkit.Rect{X: m.pad, Y: y, W: m.rpx(220), H: btnH}
-		bx := m.pad + s.sInputR.W + gap
-		bx = add(bx, y, "Add", HitAddFeed, "", 0, false, false)
-		add(bx, y, "Delete profile", HitDeleteProfile, "", s.selEdit, false, true)
+	// Edited-profile feed chips + the add-input / Add / Delete-profile row.
+	if !s.settingsEditable() {
+		s.feedChips = s.feedChips[:0]
+		return
 	}
+	feeds := s.Profiles[s.selEdit].Feeds
+	s.feedChips = ensureChips(s.feedChips, len(feeds))
+	x = m.pad
+	for i, f := range feeds {
+		label := "Front page"
+		if f != "" {
+			label = "r/" + f
+		}
+		c := s.feedChips[i]
+		c.Text, c.Font = label, pillFont
+		chipW := m.tab.width(label+"  ×") + m.rpx(20)
+		if x+chipW > s.W-m.pad {
+			x = m.pad
+			y += btnH + gap
+		}
+		c.SetBounds(toolkit.Rect{X: x, Y: y, W: chipW, H: btnH})
+		s.settingsHits = append(s.settingsHits, widgetHit{w: c, hit: Hit{Kind: HitRemoveFeed, Value: f, Profile: s.selEdit}})
+		x += chipW + gap
+	}
+	y += btnH + m.pad
+
+	// Add-subreddit input (always focused) + Add + Delete-profile.
+	s.settingsEntry.Font = pillFont
+	s.settingsEntry.SetBounds(toolkit.Rect{X: m.pad, Y: y, W: m.rpx(220), H: btnH})
+	bx := m.pad + m.rpx(220) + gap
+	bx = place(s.addBtn, bx, y, Hit{Kind: HitAddFeed})
+	place(s.deleteBtn, bx, y, Hit{Kind: HitDeleteProfile, Profile: s.selEdit})
 }
 
-// drawSettings paints the preferences editor.
+// drawSettings paints the preferences editor from its persistent widgets.
 func (s *Scene) drawSettings(buf []byte) {
 	s.layoutSettings()
 	m := s.m
@@ -217,9 +258,8 @@ func (s *Scene) drawSettings(buf []byte) {
 
 	fillBox(p, th, painter.Rect{X: 0, Y: 0, W: s.W, H: s.H}, th.Background)
 
-	// Every body element is a stock go-widgets widget carrying the reader's
-	// shaped fallback font — no hand-drawn pills / fields. Section captions are
-	// toolkit.Label (muted ink), positioned to match layoutSettings' y flow.
+	// Section captions are toolkit.Label (muted ink), positioned to match
+	// layoutSettings' y flow.
 	labelFont := ttFont(false, m.side.px)
 	drawLabel := func(x, y int, text string) {
 		w := toolkit.NewLabel(text)
@@ -234,60 +274,42 @@ func (s *Scene) drawSettings(buf []byte) {
 	profLabelY := sortLabelY + m.side.height + m.rpx(6) + (m.tab.height + m.rpx(8)) + m.pad*2
 	drawLabel(m.pad, profLabelY, "PROFILES")
 
-	// Pills are toolkit.Button (Selected = active choice, ButtonDanger =
-	// destructive); feed chips are toolkit.Chip with a Closable ✕ affordance.
-	pillFont := ttFont(true, m.tab.px)
-	for _, b := range s.sButtons {
-		if b.kind == HitRemoveFeed {
-			w := toolkit.NewChip(strings.TrimSuffix(b.label, "  ×"))
-			w.Closable, w.Font = true, pillFont
-			w.SetBounds(b.rect)
-			w.Draw(p, th)
-			continue
-		}
-		w := toolkit.NewButton(b.label, nil)
-		w.Selected().Set(b.active)
-		w.Font = pillFont
-		if b.danger {
-			w.Style = toolkit.ButtonDanger
-		}
-		w.SetBounds(b.rect)
-		w.Draw(p, th)
+	// Body pills + chips (persistent widgets positioned by layoutSettings).
+	for _, b := range s.themeButtons {
+		b.Draw(p, th)
 	}
-
-	// Add-subreddit input field is the persistent toolkit.Entry, focused since
-	// settings routes typed text straight into it through OnEvent.
-	if s.sInputR.W > 0 {
-		w := s.settingsEntry
-		w.SetFocused(true)
-		w.Font = pillFont
-		w.SetBounds(s.sInputR)
-		w.Draw(p, th)
+	for _, b := range s.sortButtons {
+		b.Draw(p, th)
+	}
+	for _, b := range s.profileButtons {
+		b.Draw(p, th)
+	}
+	s.newProfileBtn.Draw(p, th)
+	if s.settingsEditable() {
+		for _, c := range s.feedChips {
+			c.Draw(p, th)
+		}
+		// The add-subreddit Entry is focused since settings routes typed text
+		// straight into it through OnEvent.
+		s.settingsEntry.SetFocused(true)
+		s.settingsEntry.Draw(p, th)
+		s.addBtn.Draw(p, th)
+		s.deleteBtn.Draw(p, th)
 	}
 
 	// Topbar: title + Done (drawn last so it overpaints any overflow).
 	fillBox(p, th, painter.Rect{X: 0, Y: 0, W: s.W, H: m.topbarH}, th.Accent)
 	m.header.labelAt(p, th, m.pad, (m.topbarH-m.header.height)/2, "Settings", onAccent)
-	done := "Done"
-	dw := m.tab.width(done) + m.rpx(24)
-	dr := toolkit.Rect{X: s.W - m.pad - dw, Y: (m.topbarH - (m.tab.height + m.rpx(8))) / 2, W: dw, H: m.tab.height + m.rpx(8)}
-	fillRoundBox(p, th, dr, m.rpx(6), onAccent)
-	m.tab.labelAt(p, th, dr.X+m.rpx(12), dr.Y+(dr.H-m.tab.height)/2, done, th.Accent)
+	s.doneBtn.Draw(p, th)
 }
 
-// hitSettings maps a click in the preferences view to an action.
+// hitSettings maps a click in the preferences view to an action by asking each
+// persistent widget's own HitTest — no rect math.
 func (s *Scene) hitSettings(x, y int) Hit {
 	s.layoutSettings()
-	// Done lives in the topbar; recompute its rect the same way drawSettings does.
-	m := s.m
-	dw := m.tab.width("Done") + m.rpx(24)
-	done := toolkit.Rect{X: s.W - m.pad - dw, Y: (m.topbarH - (m.tab.height + m.rpx(8))) / 2, W: dw, H: m.tab.height + m.rpx(8)}
-	if done.Contains(x, y) {
-		return Hit{Kind: HitCloseSettings}
-	}
-	for _, b := range s.sButtons {
-		if b.rect.Contains(x, y) {
-			return Hit{Kind: b.kind, Value: b.value, Sort: b.value, Profile: b.index}
+	for _, wh := range s.settingsHits {
+		if wh.w.HitTest(x, y) {
+			return wh.hit
 		}
 	}
 	return Hit{}
