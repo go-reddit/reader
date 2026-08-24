@@ -255,7 +255,8 @@ func (s *Scene) drawSettings(buf []byte) {
 			w.Draw(p, th)
 			continue
 		}
-		w := &toolkit.Button{Label: b.label, Selected: b.active}
+		w := toolkit.NewButton(b.label, nil)
+		w.Selected().Set(b.active)
 		w.Font = pillFont
 		if b.danger {
 			w.Style = toolkit.ButtonDanger
@@ -268,7 +269,8 @@ func (s *Scene) drawSettings(buf []byte) {
 	// toolkit's own Entry.Placeholder), focused since settings routes typed text
 	// straight into it, with the caret parked at the end.
 	if s.sInputR.W > 0 {
-		w := &toolkit.Entry{Text: s.input, Placeholder: "add subreddit…", Cursor: len([]rune(s.input))}
+		w := toolkit.NewEntry(s.input)
+		w.Placeholder = "add subreddit…"
 		w.SetFocused(true)
 		w.Font = pillFont
 		w.SetBounds(s.sInputR)

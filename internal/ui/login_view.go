@@ -105,7 +105,8 @@ func (s *Scene) drawLogin(buf []byte) {
 		lbl.SetBounds(toolkit.Rect{X: r.X, Y: r.Y - m.side.height - m.rpx(2), W: r.W, H: m.side.height})
 		lbl.Draw(p, th)
 
-		e := &toolkit.Entry{Text: text, Placeholder: "…", Cursor: len([]rune(text))}
+		e := toolkit.NewEntry(text)
+		e.Placeholder = "…"
 		e.SetFocused(focused)
 		e.Font = fieldFont
 		if secret {
@@ -119,7 +120,8 @@ func (s *Scene) drawLogin(buf []byte) {
 
 	// Submit button is a toolkit.Button (accent-primary style).
 	for _, b := range s.sButtons {
-		w := &toolkit.Button{Label: b.label, Style: toolkit.ButtonProminent}
+		w := toolkit.NewButton(b.label, nil)
+		w.Style = toolkit.ButtonProminent
 		w.Font = fieldFont
 		w.SetBounds(b.rect)
 		w.Draw(p, th)
