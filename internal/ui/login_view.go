@@ -14,11 +14,23 @@ import (
 // OpenLogin enters the login view with empty fields.
 func (s *Scene) OpenLogin() {
 	s.Mode = ModeLogin
-	s.loginID, s.loginSecret, s.loginFocus, s.loginErr = "", "", 0, ""
+	s.loginIDEntry.SetText("")
+	s.loginSecretEntry.SetText("")
+	s.loginFocus, s.loginErr = 0, ""
 }
 
 // LoginCredentials returns the typed client id + secret.
-func (s *Scene) LoginCredentials() (id, secret string) { return s.loginID, s.loginSecret }
+func (s *Scene) LoginCredentials() (id, secret string) {
+	return s.loginIDEntry.Value(), s.loginSecretEntry.Value()
+}
+
+// loginField returns the Entry that currently receives typed text.
+func (s *Scene) loginField() *toolkit.Entry {
+	if s.loginFocus == 1 {
+		return s.loginSecretEntry
+	}
+	return s.loginIDEntry
+}
 
 // SetLoginError shows an error under the form (e.g. a cancelled Touch ID).
 func (s *Scene) SetLoginError(msg string) { s.loginErr = msg }
@@ -34,19 +46,11 @@ func (s *Scene) FocusLoginField(i int) {
 func (s *Scene) NextLoginField() { s.loginFocus = 1 - s.loginFocus }
 
 func (s *Scene) loginTypeRune(r rune) {
-	if s.loginFocus == 1 {
-		s.loginSecret += string(r)
-	} else {
-		s.loginID += string(r)
-	}
+	s.loginField().OnEvent(toolkit.Event{Kind: toolkit.EventChar, Code: string(r)})
 }
 
 func (s *Scene) loginBackspace() {
-	if s.loginFocus == 1 {
-		s.loginSecret = trimLastRune(s.loginSecret)
-	} else {
-		s.loginID = trimLastRune(s.loginID)
-	}
+	s.loginField().OnEvent(toolkit.Event{Kind: toolkit.EventKeyDown, Code: "Backspace"})
 }
 
 // loginLayout computes the field + button rectangles.
@@ -96,24 +100,21 @@ func (s *Scene) drawLogin(buf []byte) {
 	// with the caret parked at the end since the reader drives the text itself.
 	labelFont := ttFont(false, m.side.px)
 	fieldFont := ttFont(true, m.tab.px)
-	drawField := func(label string, r toolkit.Rect, text string, secret, focused bool) {
+	// The two fields are the persistent toolkit.Entry widgets (the secret one is
+	// masked at construction); their captions are stock toolkit.Label.
+	drawField := func(label string, r toolkit.Rect, e *toolkit.Entry, focused bool) {
 		lbl := toolkit.NewLabel(label)
 		lbl.Font, lbl.Ink = labelFont, muteS
 		lbl.SetBounds(toolkit.Rect{X: r.X, Y: r.Y - m.side.height - m.rpx(2), W: r.W, H: m.side.height})
 		lbl.Draw(p, th)
 
-		e := toolkit.NewEntry(text)
-		e.Placeholder = "…"
 		e.SetFocused(focused)
 		e.Font = fieldFont
-		if secret {
-			e.Mask = '•' // the toolkit masks the display; Text keeps the real value
-		}
 		e.SetBounds(r)
 		e.Draw(p, th)
 	}
-	drawField("CLIENT ID", s.loginIDR, s.loginID, false, s.loginFocus == 0)
-	drawField("CLIENT SECRET", s.loginSecretR, s.loginSecret, true, s.loginFocus == 1)
+	drawField("CLIENT ID", s.loginIDR, s.loginIDEntry, s.loginFocus == 0)
+	drawField("CLIENT SECRET", s.loginSecretR, s.loginSecretEntry, s.loginFocus == 1)
 
 	// Submit button is a toolkit.Button (accent-primary style).
 	for _, b := range s.sButtons {

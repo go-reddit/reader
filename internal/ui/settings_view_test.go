@@ -22,7 +22,7 @@ func TestOpenCloseSettings(t *testing.T) {
 	s := NewScene()
 	s.Active = 1
 	s.OpenSettings()
-	if s.Mode != ModeSettings || s.selEdit != 1 || s.input != "" {
+	if s.Mode != ModeSettings || s.selEdit != 1 || s.Input() != "" {
 		t.Fatalf("OpenSettings => %+v", s)
 	}
 	s.CloseSettings()
@@ -59,27 +59,27 @@ func TestSettingsMutations(t *testing.T) {
 	if s.Input() != "g" {
 		t.Errorf("backspace => %q", s.Input())
 	}
-	s.input = "r/newsub"
+	s.settingsEntry.SetText("r/newsub")
 	before := len(s.Profiles[0].Feeds)
 	s.AddInputFeed()
-	if len(s.Profiles[0].Feeds) != before+1 || s.Profiles[0].Feeds[before] != "newsub" || s.input != "" {
+	if len(s.Profiles[0].Feeds) != before+1 || s.Profiles[0].Feeds[before] != "newsub" || s.Input() != "" {
 		t.Errorf("AddInputFeed => %v", s.Profiles[0].Feeds)
 	}
 	// Duplicate + blank + oob are ignored.
-	s.input = "newsub"
+	s.settingsEntry.SetText("newsub")
 	s.AddInputFeed()
 	if len(s.Profiles[0].Feeds) != before+1 {
 		t.Error("duplicate feed added")
 	}
-	s.input = "  "
+	s.settingsEntry.SetText("  ")
 	s.AddInputFeed()
-	s.input = "x"
+	s.settingsEntry.SetText("x")
 	s.selEdit = 99
 	s.AddInputFeed() // oob
 	s.selEdit = 0
 
 	// Backspace on empty input is a no-op.
-	s.input = ""
+	s.settingsEntry.SetText("")
 	s.Backspace()
 
 	// RemoveFeed.
@@ -168,7 +168,7 @@ func TestHitSettings(t *testing.T) {
 func TestDrawSettingsSmoke(t *testing.T) {
 	// Populated editor with a caret.
 	s := settingsScene()
-	s.input = "typing"
+	s.settingsEntry.SetText("typing")
 	buf := make([]byte, s.W*s.H*4)
 	s.Draw(buf)
 	if allZero(buf) {

@@ -107,18 +107,21 @@ type Scene struct {
 	searchFocused bool
 	searchR       toolkit.Rect
 
-	// Preferences view.
-	Mode      Mode
-	ThemeName string // "system"|"light"|"dark" (persisted)
-	selEdit   int    // profile being edited in the settings view
-	input     string // the "add subreddit" text buffer
-	LoggedIn  bool   // reflects the auth state (drives the sidebar label)
+	// Preferences view. The "add subreddit" field is a persistent toolkit.Entry
+	// (built once in NewScene, edited through its OnEvent), not a plain string
+	// rebuilt every frame.
+	Mode          Mode
+	ThemeName     string // "system"|"light"|"dark" (persisted)
+	selEdit       int    // profile being edited in the settings view
+	settingsEntry *toolkit.Entry
+	LoggedIn      bool // reflects the auth state (drives the sidebar label)
 
-	// Login view.
-	loginID     string
-	loginSecret string
-	loginFocus  int // 0 = client id, 1 = client secret
-	loginErr    string
+	// Login view. The client-id + secret fields are persistent toolkit.Entry
+	// widgets (the secret one masked); they own the typed values.
+	loginIDEntry     *toolkit.Entry
+	loginSecretEntry *toolkit.Entry
+	loginFocus       int // 0 = client id, 1 = client secret
+	loginErr         string
 
 	m         metrics
 	tabs      []tabHit
@@ -159,16 +162,23 @@ func NewScene() *Scene {
 	d := settings.Default()
 	se := toolkit.NewSearchEntry("")
 	se.Icon = drawSearchIcon // a real Iconoir magnifier, not a bitmap stand-in
+	settingsEntry := toolkit.NewEntry("")
+	settingsEntry.Placeholder = "add subreddit…"
+	loginSecretEntry := toolkit.NewEntry("")
+	loginSecretEntry.Mask = '•' // display the secret masked; Value() keeps the real text
 	return &Scene{
-		W:           900,
-		H:           660,
-		theme:       toolkit.DefaultLight(),
-		Sort:        d.Sort,
-		Scale:       1,
-		Profiles:    d.Profiles,
-		Active:      d.Active,
-		ThemeName:   d.Theme,
-		searchEntry: se,
+		W:                900,
+		H:                660,
+		theme:            toolkit.DefaultLight(),
+		Sort:             d.Sort,
+		Scale:            1,
+		Profiles:         d.Profiles,
+		Active:           d.Active,
+		ThemeName:        d.Theme,
+		searchEntry:      se,
+		settingsEntry:    settingsEntry,
+		loginIDEntry:     toolkit.NewEntry(""),
+		loginSecretEntry: loginSecretEntry,
 	}
 }
 

@@ -28,7 +28,7 @@ type sButton struct {
 func (s *Scene) OpenSettings() {
 	s.Mode = ModeSettings
 	s.selEdit = s.Active
-	s.input = ""
+	s.settingsEntry.SetText("")
 }
 
 // CloseSettings returns to the feed view.
@@ -54,7 +54,7 @@ func (s *Scene) TypeRune(r rune) {
 		s.searchEntry.OnEvent(toolkit.Event{Kind: toolkit.EventChar, Code: string(r)})
 		s.ScrollY = 0
 	default:
-		s.input += string(r)
+		s.settingsEntry.OnEvent(toolkit.Event{Kind: toolkit.EventChar, Code: string(r)})
 	}
 }
 
@@ -67,26 +67,18 @@ func (s *Scene) Backspace() {
 		s.searchEntry.OnEvent(toolkit.Event{Kind: toolkit.EventKeyDown, Code: "Backspace"})
 		s.ScrollY = 0
 	default:
-		s.input = trimLastRune(s.input)
+		s.settingsEntry.OnEvent(toolkit.Event{Kind: toolkit.EventKeyDown, Code: "Backspace"})
 	}
-}
-
-func trimLastRune(str string) string {
-	rs := []rune(str)
-	if len(rs) == 0 {
-		return str
-	}
-	return string(rs[:len(rs)-1])
 }
 
 // Input returns the current add-subreddit text (for the front-end display).
-func (s *Scene) Input() string { return s.input }
+func (s *Scene) Input() string { return s.settingsEntry.Value() }
 
 // AddInputFeed adds the typed subreddit to the edited profile and clears the
 // field. Blank/duplicate entries are ignored.
 func (s *Scene) AddInputFeed() {
-	name := strings.TrimPrefix(strings.TrimSpace(s.input), "r/")
-	s.input = ""
+	name := strings.TrimPrefix(strings.TrimSpace(s.settingsEntry.Value()), "r/")
+	s.settingsEntry.SetText("")
 	if name == "" || s.selEdit < 0 || s.selEdit >= len(s.Profiles) {
 		return
 	}
@@ -263,12 +255,10 @@ func (s *Scene) drawSettings(buf []byte) {
 		w.Draw(p, th)
 	}
 
-	// Add-subreddit input field is a generic toolkit.Entry (placeholder from the
-	// toolkit's own Entry.Placeholder), focused since settings routes typed text
-	// straight into it, with the caret parked at the end.
+	// Add-subreddit input field is the persistent toolkit.Entry, focused since
+	// settings routes typed text straight into it through OnEvent.
 	if s.sInputR.W > 0 {
-		w := toolkit.NewEntry(s.input)
-		w.Placeholder = "add subreddit…"
+		w := s.settingsEntry
 		w.SetFocused(true)
 		w.Font = pillFont
 		w.SetBounds(s.sInputR)
