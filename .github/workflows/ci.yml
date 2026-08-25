@@ -61,3 +61,24 @@ jobs:
       - run: go test ./internal/ui/... ./internal/server/... ./internal/settings/... .
       - name: Verify wasm compiles
         run: GOOS=js GOARCH=wasm go build -o /dev/null ./cmd/front
+
+  # Blocking guard against hand-drawn UI: bricolint (a go/analysis vet tool)
+  # fails the build if application code calls a go-widgets/painter drawing
+  # primitive directly, or builds a toolkit widget inside a per-frame Draw/
+  # Paint/Render method, instead of composing the UI from toolkit widgets.
+  bricolint:
+    name: bricolint (hand-drawn UI guard)
+    runs-on: ubuntu-latest
+    env:
+      GOWORK: "off"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - name: Install bricolint
+        run: go install github.com/go-widgets/bricolint/cmd/bricolint@v0.1.0
+      - name: Guard against hand-drawn UI
+        run: go vet -vettool="$(go env GOPATH)/bin/bricolint" ./...
+      - name: Negative control (the guard must bite)
+        run: BRICOLINT="$(go env GOPATH)/bin/bricolint" bash hack/bricolint-negative-control.sh

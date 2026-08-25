@@ -5,6 +5,8 @@
 // Go, so no iconutil / sips is needed.
 //
 //	go run ./cmd/mkicon dist/AppIcon.icns
+//
+//bricolint:allowfile build tool that rasterises a static icon asset, not interactive UI chrome — the painter primitives here are a genuine render leaf
 package main
 
 import (

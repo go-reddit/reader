@@ -139,6 +139,11 @@ type Scene struct {
 	settingsR toolkit.Rect
 	accountR  toolkit.Rect
 
+	// Empty-feed placeholder. A persistent toolkit.EmptyState (built once in
+	// NewScene, repositioned each frame) shown when the feed has no posts; it
+	// keeps its own state across frames instead of being rebuilt per paint.
+	emptyState *toolkit.EmptyState
+
 	m        metrics
 	tabs     []tabHit
 	rows     []rowLayout
@@ -213,6 +218,7 @@ func NewScene() *Scene {
 		loginCancelBtn:   toolkit.NewButton("Cancel", nil),
 		profBar:          toolkit.NewFolderTabs(nil, 0),
 		sideTree:         sideTree,
+		emptyState:       toolkit.NewEmptyState("No posts loaded."),
 		newProfileBtn:    toolkit.NewButton("+ New", nil),
 		addBtn:           toolkit.NewButton("Add", nil),
 		deleteBtn:        toolkit.NewButton("Delete profile", nil),
@@ -509,10 +515,10 @@ func (s *Scene) Draw(buf []byte) {
 		s.drawPost(p, r.post, screenY)
 	}
 	if len(s.Posts) == 0 {
-		// Empty feed: a real toolkit.EmptyState centred in the feed viewport.
-		es := toolkit.NewEmptyState("No posts loaded.")
-		es.SetBounds(toolkit.Rect{X: m.sidebarW, Y: feedTop, W: s.W - m.sidebarW, H: s.viewportH()})
-		es.Draw(p, th)
+		// Empty feed: the persistent toolkit.EmptyState centred in the feed
+		// viewport (repositioned each frame, not rebuilt).
+		s.emptyState.SetBounds(toolkit.Rect{X: m.sidebarW, Y: feedTop, W: s.W - m.sidebarW, H: s.viewportH()})
+		s.emptyState.Draw(p, th)
 	}
 
 	// Vertical scrollbar for the feed when it overflows its viewport. Drawn over
