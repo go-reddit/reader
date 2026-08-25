@@ -42,10 +42,14 @@ target="internal/ui/scene.go"
 anchor='fillBox(p, th, painter.Rect{X: 0, Y: 0, W: s.W, H: s.H}, th.Background)'
 inject='	p.FillRect(painter.Rect{X: 0, Y: 0, W: 1, H: 1}, th.Background) // bricolint-negative-control: injected raw primitive'
 
+# Restore the target ONLY once a real backup has been taken (restore_armed=1)
+# and it is non-empty, so a failure before the cp below cannot make the trap
+# copy an empty temp over $target and wipe it.
 backup="$(mktemp)"
-cp "$target" "$backup"
-restore() { cp "$backup" "$target"; rm -f "$backup"; }
+restore_armed=0
+restore() { [ "$restore_armed" = 1 ] && [ -s "$backup" ] && cp "$backup" "$target"; rm -f "$backup"; return 0; }
 trap restore EXIT
+cp "$target" "$backup"; restore_armed=1
 
 run_vet() { go vet -vettool="$BRICOLINT" ./... >/dev/null 2>&1; }
 
