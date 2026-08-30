@@ -11,8 +11,8 @@ func fakeEnv(m map[string]string) func(string) string {
 
 func TestOptionsFromEnv(t *testing.T) {
 	o := optionsFromEnv(fakeEnv(map[string]string{
-		"READER_SUBREDDIT": "golang",
-		"READER_SORT":      "top",
+		"READER_SUBREDDIT":  "golang",
+		"READER_SORT":       "top",
 		"READER_USER_AGENT": "ua/1",
 	}))
 	if o.subreddit != "golang" || o.sort != "top" || o.userAgent != "ua/1" {

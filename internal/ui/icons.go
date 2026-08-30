@@ -1,14 +1,14 @@
 package ui
 
-// Real vector icons, drawn from the Iconoir set via github.com/go-iconoir/iconoir
+// Real vector icons, drawn from the Iconoir set via github.com/go-icons/iconoir
 // rather than hand-plotted glyphs or Unicode stand-ins. Every icon the reader
 // paints — the search magnifier, the sidebar's account + settings entries — goes
-// through iconoir.Draw so it stays crisp at any zoom / Retina scale and matches
+// through toolkit.SVGIcon so it stays crisp at any zoom / Retina scale and matches
 // the sibling go-news-reader shell. Each helper is a thin wrapper that centres a
 // square glyph in the widget slot it is handed and blits it in the given ink.
 
 import (
-	"github.com/go-iconoir/iconoir"
+	"github.com/go-icons/iconoir"
 	"github.com/go-widgets/painter"
 	"github.com/go-widgets/toolkit"
 )
@@ -32,7 +32,15 @@ func iconInset(r toolkit.Rect, fraction int) toolkit.Rect {
 // back to text; every name the reader uses is a real Iconoir icon, verified by
 // TestIconsResolve.
 func drawIcon(p painter.Painter, r toolkit.Rect, name string, ink toolkit.RGBA) bool {
-	return iconoir.Draw(p, iconInset(r, 82), name, ink)
+	// go-icons ships the pack as SVG source and toolkit.SVGIcon rasterises it,
+	// caching per (document, ink) — the split that replaced go-iconoir, whose
+	// Draw did both and only for this one pack.
+	doc := iconoir.Icon(name)
+	if doc == "" {
+		return false
+	}
+	toolkit.SVGIcon(doc)(p, iconInset(r, 82), ink)
+	return true
 }
 
 // Icon names used across the reader (all Iconoir "regular" set members).
