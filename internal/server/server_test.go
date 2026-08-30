@@ -17,10 +17,10 @@ import (
 
 // fakeStore is an in-memory SettingsStore.
 type fakeStore struct {
-	cur      settings.Settings
-	loadErr  error
-	saveErr  error
-	saved    *settings.Settings
+	cur     settings.Settings
+	loadErr error
+	saveErr error
+	saved   *settings.Settings
 }
 
 func (f *fakeStore) Load() (settings.Settings, error) { return f.cur, f.loadErr }
