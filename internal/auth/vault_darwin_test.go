@@ -98,23 +98,23 @@ func TestVaultLoadMapping(t *testing.T) {
 	sg, gg, dg := kcSet, kcGet, kcDelete
 	defer func() { kcSet, kcGet, kcDelete = sg, gg, dg }()
 
-	kcGet = func(_, _ string) ([]byte, error) { return nil, keyring.ErrNotFound }
+	kcGet = func(_, _ string, _ ...keyring.Option) ([]byte, error) { return nil, keyring.ErrNotFound }
 	if _, err := (keychainVault{}).Load(); !errors.Is(err, ErrNoCredentials) {
 		t.Fatalf("Load miss = %v, want ErrNoCredentials", err)
 	}
 
 	boom := errors.New("boom")
-	kcGet = func(_, _ string) ([]byte, error) { return nil, boom }
+	kcGet = func(_, _ string, _ ...keyring.Option) ([]byte, error) { return nil, boom }
 	if _, err := (keychainVault{}).Load(); !errors.Is(err, boom) {
 		t.Fatalf("Load error = %v, want boom", err)
 	}
 
-	kcGet = func(_, _ string) ([]byte, error) { return []byte("{not json"), nil }
+	kcGet = func(_, _ string, _ ...keyring.Option) ([]byte, error) { return []byte("{not json"), nil }
 	if _, err := (keychainVault{}).Load(); err == nil {
 		t.Fatal("Load with malformed JSON should error")
 	}
 
-	kcGet = func(_, _ string) ([]byte, error) {
+	kcGet = func(_, _ string, _ ...keyring.Option) ([]byte, error) {
 		return []byte(`{"client_id":"a","client_secret":"b"}`), nil
 	}
 	c, err := (keychainVault{}).Load()
@@ -151,15 +151,15 @@ func TestVaultSaveAvailableClearSeams(t *testing.T) {
 		t.Fatal("Save should propagate the kcSet error")
 	}
 
-	kcGet = func(_, _ string) ([]byte, error) { return nil, keyring.ErrNotFound }
+	kcGet = func(_, _ string, _ ...keyring.Option) ([]byte, error) { return nil, keyring.ErrNotFound }
 	if !(keychainVault{}).Available() {
 		t.Fatal("Available on ErrNotFound should be true")
 	}
-	kcGet = func(_, _ string) ([]byte, error) { return []byte("x"), nil }
+	kcGet = func(_, _ string, _ ...keyring.Option) ([]byte, error) { return []byte("x"), nil }
 	if !(keychainVault{}).Available() {
 		t.Fatal("Available on nil error should be true")
 	}
-	kcGet = func(_, _ string) ([]byte, error) { return nil, keyring.ErrUnavailable }
+	kcGet = func(_, _ string, _ ...keyring.Option) ([]byte, error) { return nil, keyring.ErrUnavailable }
 	if (keychainVault{}).Available() {
 		t.Fatal("Available on ErrUnavailable should be false")
 	}
