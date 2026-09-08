@@ -10,7 +10,7 @@ require (
 	github.com/go-opentype/fonts v0.9.0
 	github.com/go-reddit/reddit v0.9.0
 	github.com/go-widgets/painter v0.13.0
-	github.com/go-widgets/toolkit v0.314.0
+	github.com/go-widgets/toolkit v0.316.0
 	github.com/refraction-networking/utls v1.8.2
 	golang.org/x/image v0.45.0
 )
