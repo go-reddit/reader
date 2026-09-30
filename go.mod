@@ -10,7 +10,7 @@ require (
 	github.com/go-opentype/fonts v0.10.0
 	github.com/go-reddit/reddit v0.9.0
 	github.com/go-widgets/painter v0.13.0
-	github.com/go-widgets/toolkit v0.321.0
+	github.com/go-widgets/toolkit v0.321.1
 	github.com/refraction-networking/utls v1.8.2
 	golang.org/x/image v0.46.0
 )
@@ -23,15 +23,18 @@ require (
 
 require (
 	github.com/ajroetker/go-highway v0.0.4 // indirect
-	github.com/ajroetker/go-jpeg2000 v0.0.2 // indirect
 	github.com/andybalholm/brotli v1.2.4 // indirect
 	github.com/coder/websocket v1.8.15 // indirect
-	github.com/go-crdt/collab v0.70.0 // indirect
+	github.com/go-crdt/collab v0.71.0 // indirect
 	github.com/go-crdt/crdt v0.51.0 // indirect
-	github.com/go-gfx/gfx v0.19.0 // indirect
-	github.com/go-images/images v0.0.0-20260831115433-23d959d868e3 // indirect
+	github.com/go-gfx/gfx v0.34.0 // indirect
+	github.com/go-images/gif v0.1.0 // indirect
+	github.com/go-images/images v0.0.0-20260927173152-87444e36aac4 // indirect
+	github.com/go-images/jpeg v0.2.0 // indirect
+	github.com/go-images/jpeg2000 v0.1.0 // indirect
+	github.com/go-images/png v0.1.0 // indirect
 	github.com/go-macos/keychain v0.1.0 // indirect
-	github.com/go-opentype/opentype v0.12.0 // indirect
+	github.com/go-opentype/opentype v0.13.0 // indirect
 	github.com/go-opentype/shape v0.5.0 // indirect
 	github.com/go-richdoc/richdoc v0.3.0 // indirect
 	github.com/go-typeset/bidi v0.3.0 // indirect
@@ -39,7 +42,7 @@ require (
 	github.com/klauspost/compress v1.17.4 // indirect
 	github.com/sergeymakinen/go-bmp v1.0.0 // indirect
 	github.com/sergeymakinen/go-ico v1.0.0 // indirect
-	github.com/tannevaled/gobig2 v0.1.0 // indirect
+	github.com/tannevaled/gobig2 v0.2.0 // indirect
 	golang.org/x/crypto v0.55.0 // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
