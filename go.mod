@@ -4,29 +4,25 @@ go 1.27.1
 
 require (
 	github.com/ebitengine/purego v0.11.1
-	github.com/go-icons/iconoir v0.2.0
-	github.com/go-keyring/keyring v0.3.0
-	github.com/go-macos/objc v0.10.2
-	github.com/go-opentype/fonts v0.10.0
-	github.com/go-reddit/reddit v0.9.0
-	github.com/go-widgets/painter v0.13.0
-	github.com/go-widgets/toolkit v0.321.2
+	github.com/go-icons/iconoir v0.3.0
+	github.com/go-keyring/keyring v0.4.0
+	github.com/go-macos/objc v0.11.0
+	github.com/go-opentype/fonts v0.12.0
+	github.com/go-reddit/reddit v0.10.0
+	github.com/go-widgets/painter v0.15.0
+	github.com/go-widgets/toolkit v0.326.0
 	github.com/refraction-networking/utls v1.8.2
 	golang.org/x/image v0.46.0
-)
-
-require (
-	github.com/danieljoos/wincred v1.2.3 // indirect
-	github.com/go-freedesktop/secretservice v0.1.0 // indirect
-	github.com/godbus/dbus/v5 v5.2.2 // indirect
 )
 
 require (
 	github.com/ajroetker/go-highway v0.0.4 // indirect
 	github.com/andybalholm/brotli v1.2.5 // indirect
 	github.com/coder/websocket v1.8.15 // indirect
+	github.com/danieljoos/wincred v1.2.3 // indirect
 	github.com/go-crdt/collab v0.74.0 // indirect
 	github.com/go-crdt/crdt v0.55.0 // indirect
+	github.com/go-freedesktop/secretservice v0.1.0 // indirect
 	github.com/go-gfx/gfx v0.34.0 // indirect
 	github.com/go-images/gif v0.1.0 // indirect
 	github.com/go-images/images v0.0.0-20260927173152-87444e36aac4 // indirect
@@ -39,6 +35,7 @@ require (
 	github.com/go-richdoc/richdoc v0.4.0 // indirect
 	github.com/go-typeset/bidi v0.3.0 // indirect
 	github.com/go-widgets/mvvm v0.9.0 // indirect
+	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/klauspost/compress v1.17.4 // indirect
 	github.com/sergeymakinen/go-bmp v1.0.0 // indirect
 	github.com/sergeymakinen/go-ico v1.0.0 // indirect
