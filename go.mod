@@ -3,11 +3,11 @@ module github.com/go-reddit/reader
 go 1.27.2
 
 require (
-	github.com/ebitengine/purego v0.11.1
+	github.com/ebitengine/purego v0.11.2
 	github.com/go-icons/iconoir v0.3.0
 	github.com/go-keyring/keyring v0.4.0
 	github.com/go-macos/objc v0.11.2
-	github.com/go-opentype/fonts v0.12.0
+	github.com/go-opentype/fonts v0.14.0
 	github.com/go-reddit/reddit v0.10.0
 	github.com/go-widgets/painter v0.16.0
 	github.com/go-widgets/toolkit v0.329.0
@@ -30,7 +30,7 @@ require (
 	github.com/go-images/jpeg2000 v0.13.3 // indirect
 	github.com/go-images/png v0.2.0 // indirect
 	github.com/go-macos/keychain v0.1.0 // indirect
-	github.com/go-opentype/opentype v0.15.0 // indirect
+	github.com/go-opentype/opentype v0.16.0 // indirect
 	github.com/go-opentype/shape v0.7.0 // indirect
 	github.com/go-richdoc/richdoc v0.6.0 // indirect
 	github.com/go-typeset/bidi v0.3.1 // indirect
