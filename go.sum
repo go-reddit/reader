@@ -8,8 +8,8 @@ github.com/danieljoos/wincred v1.2.3 h1:v7dZC2x32Ut3nEfRH+vhoZGvN72+dQ/snVXo/vMF
 github.com/danieljoos/wincred v1.2.3/go.mod h1:6qqX0WNrS4RzPZ1tnroDzq9kY3fu1KwE7MRLQK4X0bs=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/ebitengine/purego v0.11.1 h1:2zpWRSQNVKN4eKsKO9eM1ILDgWfYMY9GwqRmK6XeQ/0=
-github.com/ebitengine/purego v0.11.1/go.mod h1:DCHPP08djqhNSoTfImcnHYQRZmd0qhakvrozqaEYhGQ=
+github.com/ebitengine/purego v0.11.2 h1:WWiTx8rD8zYdOwSj8O/NiNbsOvSAgJMTlyV1XlbUSeU=
+github.com/ebitengine/purego v0.11.2/go.mod h1:DCHPP08djqhNSoTfImcnHYQRZmd0qhakvrozqaEYhGQ=
 github.com/go-crdt/collab v0.77.1 h1:eKzzFLIt4eQpM/YLRbbViMbSdHcN6ivSHeA5aldqgzw=
 github.com/go-crdt/collab v0.77.1/go.mod h1:LFqHBOnnr2kRFrTxCVJYWGlaF8jc7l51Z7yVrUY2RnA=
 github.com/go-crdt/crdt v0.57.0 h1:sNLDTVCEnSb20gm77BUuYav8dzj5krmly/z9O7eRMCo=
@@ -36,10 +36,10 @@ github.com/go-macos/keychain v0.1.0 h1:QkKT97eeJ5m/FloDcoi4UmxIvZIosIwinRjexs3ic
 github.com/go-macos/keychain v0.1.0/go.mod h1:sR+WtyxxCqldTpbPizjLa/pFd0RPme+VSa5C3Qa4NE8=
 github.com/go-macos/objc v0.11.2 h1:d6+Zf3SA4zpclfFDcLB6Ttlb3o7cXt8Ah1oGhC+5/C8=
 github.com/go-macos/objc v0.11.2/go.mod h1:G2YcKu5C2Xs08vcM/CUUUeYUi9YeCHmkWcW+5RGwE/g=
-github.com/go-opentype/fonts v0.12.0 h1:gjYYkbDZBK3JHpraakgGNnXdkGq8oADerhDYjC22ILQ=
-github.com/go-opentype/fonts v0.12.0/go.mod h1:Kiep7ojxxaR2ALFeB/akcFHQyl1gG5OLIobp8EzaZSA=
-github.com/go-opentype/opentype v0.15.0 h1:ioE3eCbNZavlk/w073J3uX5FKjqhgOHQw+wZZdJ+gE4=
-github.com/go-opentype/opentype v0.15.0/go.mod h1:ZB31jTJl2mhPESXYMuUW+p36UrOabw/2+6mtyh/vNnI=
+github.com/go-opentype/fonts v0.14.0 h1:WHw7k9gkHT1pu9B2yyvd0FWyQqn/4NKFQoKhvMYt3Mo=
+github.com/go-opentype/fonts v0.14.0/go.mod h1:od2QcmdpKo7QCqo6Jb16y4GULk+h2Hhfq6x3xfvn62Q=
+github.com/go-opentype/opentype v0.16.0 h1:8FnPhPXQ0E3dVqfGlf8wh/v9g0eIFc7tlzUH4yi2Lu4=
+github.com/go-opentype/opentype v0.16.0/go.mod h1:ZB31jTJl2mhPESXYMuUW+p36UrOabw/2+6mtyh/vNnI=
 github.com/go-opentype/shape v0.7.0 h1:hXUkI4xdpkzq31ZYf/6zfkDAgRLZnTjI1q8DWLu5MGQ=
 github.com/go-opentype/shape v0.7.0/go.mod h1:n8pMQ/MH4Oscxwd9J0B7RiZ5gKlD0yagRQKYsAmJ9Rw=
 github.com/go-reddit/reddit v0.10.0 h1:Jq3yVtd6spEyqStb1LA4vkYF4WoLOi7AcDjrZvbNlCw=
