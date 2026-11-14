@@ -9,10 +9,10 @@ require (
 	github.com/go-macos/objc v0.12.0
 	github.com/go-opentype/fonts v0.14.0
 	github.com/go-reddit/reddit v0.10.0
-	github.com/go-widgets/painter v0.17.0
-	github.com/go-widgets/toolkit v0.356.0
+	github.com/go-widgets/painter v0.17.1
+	github.com/go-widgets/toolkit v0.374.11
 	github.com/refraction-networking/utls v1.8.2
-	golang.org/x/image v0.47.0
+	golang.org/x/image v0.48.0
 )
 
 require (
@@ -31,9 +31,10 @@ require (
 	github.com/go-typeset/bidi v0.3.1 // indirect
 	github.com/go-widgets/mvvm v0.15.0 // indirect
 	github.com/go-widgets/textinput v0.1.0 // indirect
+	github.com/go-widgets/vcs v0.1.0 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/klauspost/compress v1.17.4 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
-	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
 )
